@@ -1,0 +1,291 @@
+---
+title: "Health Care Interrupted"
+author: "Sihong"
+date: "9/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+```{r, include=FALSE}
+# load scored master data --------------------------------------------------------
+load(here::here("data/scored.Rdata"))
+```
+
+```{r, echo=FALSE, message = FALSE}
+total_weeks = max(scored$Week, na.rm=T)
+key_demo <- c ("race_cat", "race_ethnic", "poverty_cat")
+
+hc <- scored %>%
+  select (CaregiverID, Week, delay_healthcare, contains("hc_barrier"), contains("missed"), contains("miss_vaccine"), key_demo)
+```
+# Delayed Healthcare
+## Frequency Table for Delayed Healthcare Across Timepoints
+```{r, echo=FALSE, message = FALSE}
+hc %>%
+  count (delay_healthcare, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (delay_healthcare == 0 | delay_healthcare == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (delay_healthcare == 1)
+```
+## Reasons for Delayed Healthcare
+```{r, echo=FALSE, message = FALSE}
+hc_reason <- hc %>%
+  filter (delay_healthcare == 1) %>%
+  summarise (n = n(), 
+             delay_childcare_pct = sum (hc_barrier_childcare, na.rm = TRUE)/n*100, 
+             delay_cost_pct = sum (hc_barrier_cost, na.rm = TRUE)/n*100, 
+             delay_time_pct = sum (hc_barrier_time, na.rm = TRUE)/n*100, 
+             delay_family_pct = sum (hc_barrier_family, na.rm = TRUE)/n*100, 
+             delay_covid_pct = sum (hc_barrier_covid, na.rm = TRUE)/n*100, 
+             delay_other_pct = sum (hc_barrier_other, na.rm = TRUE)/n*100)
+print(t(select(hc_reason, -n)))
+```
+
+
+## Delayed Healthcare Change Over Time
+
+```{r, echo=FALSE, message = FALSE}
+hc_week <- hc %>%
+  group_by (Week) %>%
+  summarize (total = n(), 
+             delayhc_pct = sum (delay_healthcare, na.rm = TRUE)/total*100) %>%
+  filter (Week != 0)
+
+ggplot (data = hc_week, aes (x = Week, y = delayhc_pct)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Delayed Healthcare Change Over Time Breakdown by Income
+
+```{r, echo=FALSE, message = FALSE}
+hc_week_income <- hc %>%
+  group_by (Week, poverty_cat) %>%
+  summarize (total = n(), 
+             delayhc_pct = sum (delay_healthcare, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = hc_week_income, aes (x = Week, y = delayhc_pct, color = poverty_cat)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Delayed Healthcare Change Over Time Breakdown by Race/Ethnicity
+
+```{r, echo=FALSE, message = FALSE}
+hc_week_race <- hc %>%
+  group_by (Week, race_ethnic) %>%
+  summarize (total = n(), 
+             delayhc_pct = sum (delay_healthcare, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX"))
+
+ggplot (data = hc_week_race, aes (x = Week, y = delayhc_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Delayed Healthcare Change Over Time Breakdown by Race/Ethnicity and Income
+
+```{r, echo=FALSE, message = FALSE}
+hc_week_race_income <- hc %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarize (total = n(), 
+             delayhc_pct = sum (delay_healthcare, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX")& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = hc_week_race_income, aes (x = Week, y = delayhc_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) + 
+  facet_wrap (~poverty_cat)
+```
+
+
+# Missed Well-Baby Visit
+## Frequency Table for Missed Well-Baby Visits Across Timepoints
+
+```{r, echo=FALSE, message = FALSE}
+hc %>%
+  count (missed_wellbaby, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (missed_wellbaby == 0 | missed_wellbaby == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (missed_wellbaby == 1)
+```
+## Reasons for Missed Wellbaby Visits
+
+```{r, echo=FALSE, message = FALSE}
+mwb_reason <- hc %>%
+  filter (missed_wellbaby == 1) %>%
+  summarise (n = n(), 
+             mwb_family_pct = sum (missed_wb_caring.for.family, na.rm = TRUE)/n*100, 
+             mwb_covid_pct = sum (missed_wb_concern.for.covid, na.rm = TRUE)/n*100, 
+             mwb_cost_pct = sum (missed_wb_cost, na.rm = TRUE)/n*100, 
+             mwb_childcare_pct = sum (missed_wb_inability.find.childcare, na.rm = TRUE)/n*100, 
+             mwb_time_pct = sum (missed_wb_time.away.from.work, na.rm = TRUE)/n*100, 
+             mwb_vaccine_pct = sum (missed_wb_vaccine.hesitancy, na.rm = TRUE)/n*100, 
+             mwb_other_pct = sum (missed_wb_other, na.rm = TRUE)/n*100)
+print(t(select(mwb_reason, -n)))
+```
+
+
+## Missed Well-baby Visits Change Over Time
+
+```{r, echo=FALSE, message = FALSE}
+mwb_week <- hc %>%
+  group_by (Week) %>%
+  summarize (total = n(), 
+             mwb_pct = sum (missed_wellbaby, na.rm = TRUE)/total*100) %>%
+  filter (Week != 0)
+
+ggplot (data = mwb_week, aes (x = Week, y = mwb_pct)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Missed Well-baby Visits Change Over Time Breakdown by Income
+
+```{r, echo=FALSE, message = FALSE}
+mwb_week_income <- hc %>%
+  group_by (Week, poverty_cat) %>%
+  summarize (total = n(), 
+             mwb_pct = sum (missed_wellbaby, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = mwb_week_income, aes (x = Week, y = mwb_pct, color = poverty_cat)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Missed Well-Baby Visit Change Over Time Breakdown by Race/Ethnicity
+
+```{r, echo=FALSE, message = FALSE}
+mwb_week_race <- hc %>%
+  group_by (Week, race_ethnic) %>%
+  summarize (total = n(), 
+             mwb_pct = sum (missed_wellbaby, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX"))
+
+ggplot (data = mwb_week_race, aes (x = Week, y = mwb_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Missed Well-Baby Visit Change Over Time Breakdown by Race/Ethnicity and Income
+
+```{r, echo=FALSE, message = FALSE}
+mwb_week_race_income <- hc %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarize (total = n(), 
+             mwb_pct = sum (missed_wellbaby, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX")& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = mwb_week_race_income, aes (x = Week, y = mwb_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) + 
+  facet_wrap (~poverty_cat)
+```
+
+# Missed Vaccine
+
+## Frequency Table for Missed Vaccine Across Timepoints
+
+```{r, echo=FALSE, message = FALSE}
+hc %>%
+  count (missed_vaccine_any, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (missed_vaccine_any == 0 | missed_vaccine_any == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (missed_vaccine_any == 1)
+```
+
+## Missed Vaccine Change Over Time
+
+```{r, echo=FALSE, message = FALSE}
+mvc_week <- hc %>%
+  group_by (Week) %>%
+  summarize (total = n(), 
+             mvc_pct = sum (missed_vaccine_any, na.rm = TRUE)/total*100) %>%
+  filter (Week >=5)
+
+ggplot (data = mvc_week, aes (x = Week, y = mvc_pct)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(5:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Missed Vaccine Change Over Time Breakdown by Income
+
+```{r, echo=FALSE, message = FALSE}
+mvc_week_income <- hc %>%
+  group_by (Week, poverty_cat) %>%
+  summarize (total = n(), 
+             mvc_pct = sum (missed_vaccine_any, na.rm = TRUE)/total*100) %>%
+  filter ((Week >= 5)& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = mvc_week_income, aes (x = Week, y = mvc_pct, color = poverty_cat)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(5:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Missed Vaccine Change Over Time Breakdown by Race/Ethnicity
+
+```{r, echo=FALSE, message = FALSE}
+mvc_week_race <- hc %>%
+  group_by (Week, race_ethnic) %>%
+  summarize (total = n(), 
+             mvc_pct = sum (missed_vaccine_any, na.rm = TRUE)/total*100) %>%
+  filter ((Week >= 5)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX"))
+
+ggplot (data = mvc_week_race, aes (x = Week, y = mvc_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(5:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Missed Vaccine Change Over Time Breakdown by Race/Ethnicity and Income
+
+```{r, echo=FALSE, message = FALSE}
+mvc_week_race_income <- hc %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarize (total = n(), 
+             mvc_pct = sum (missed_vaccine_any, na.rm = TRUE)/total*100) %>%
+  filter ((Week >= 5)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX")& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = mvc_week_race_income, aes (x = Week, y = mvc_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(5:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) + 
+  facet_wrap (~poverty_cat)
+```

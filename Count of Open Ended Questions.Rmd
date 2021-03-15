@@ -1,0 +1,109 @@
+---
+title: "Count of Open Ended Questions"
+author: "Sihong"
+date: "12/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(knitr)
+library(kableExtra)
+library(readr)
+library(haven)
+library(BSDA)
+library(naniar)
+library(Rfast)
+library(RMediation)
+library(tidyverse)
+```
+
+
+```{r, echo=FALSE, message = FALSE}
+#Define functions
+moe.p = function(p, n){
+  q = 1-p
+  moe = 1.96*sqrt((p*q)/n)
+  return(moe)
+}
+
+moe.m = function(sd,n){
+  moe = 1.96*sd/sqrt(n)
+  return(moe)}
+
+combine.cat = function(x, cols, id, newvar.name){
+  subset = x[,c(id, "Week", cols)]
+  names(subset) = c("id", "Week", paste0("X",1:length(cols)))
+  subset = suppressWarnings(gather(subset, "key", "value", -id, -Week))
+  subset = filter(subset, !is.na(value))
+  subset$key = gsub("X", "", subset$key)
+  subset = group_by(subset, id, Week)
+  subset = summarize(subset, newvar = paste(key, collapse = ",")) %>% ungroup()
+  names(subset) = c(id,"Week", newvar.name)
+  x = suppressMessages(full_join(x, subset))
+  return(x)
+}
+
+find_items = function(string, data2){
+  items = names(data2)
+  locations = which(grepl(string, items))
+  final = items[locations]
+  return(final)
+}
+
+my.max = function(x) ifelse (!all(is.na(x)), max(x,na.rm = TRUE), NA)
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+#OR load master data file
+master = read_sav(here("data/MasterFile_groupings.sav"))
+
+master = filter(master, CaregiverID != "") 
+master = master %>%
+  group_by(CaregiverID, Week) %>%
+  filter(row_number() == max(row_number()) & is.na (Exclude) == T) %>%
+  ungroup()
+
+master <- master%>%
+  mutate (n = n(),
+          OPEN.001e = ifelse (str_length(OPEN.001)>0, 1, 0),
+          OPEN.002e = ifelse (str_length(OPEN.002)>0, 1, 0),
+          OPEN.003e = ifelse (str_length(OPEN.003)>0, 1, 0),
+          OPEN.004e = ifelse (str_length(OPEN.004)>0, 1, 0),
+          OPEN.005e = ifelse (str_length(OPEN.005)>0, 1, 0),
+          OPEN.006e = ifelse (is.na(OPEN.006), 0, 1),
+          OPEN.007e = ifelse (str_length(OPEN.007)>0, 1, 0),
+          OPEN.008e = ifelse (str_length(OPEN.008)>0, 1, 0),
+          OPEN.009e = ifelse (str_length(OPEN.009)>0, 1, 0))%>%
+  mutate (OPEN.e = ifelse((OPEN.001e == 1|OPEN.002e == 1|OPEN.003e == 1|OPEN.004e == 1|OPEN.005e == 1|OPEN.006e == 1|OPEN.007e == 1|OPEN.008e == 1|OPEN.009e == 1), 1, 0))
+
+open <- master %>%
+  summarise (open.1 = sum(OPEN.001e, na.rm = T),
+             open.2 = sum(OPEN.002e, na.rm = T),
+             open.3 = sum(OPEN.003e, na.rm = T),
+             open.4 = sum(OPEN.004e, na.rm = T),
+             open.5 = sum(OPEN.005e, na.rm = T),
+             open.6 = sum(OPEN.006e, na.rm = T),
+             open.7 = sum(OPEN.007e, na.rm = T),
+             open.8 = sum(OPEN.008e, na.rm = T),
+             open.9 = sum(OPEN.009e, na.rm = T))%>%
+  mutate (open.total = sum (open.1, open.2, open.3, open.4, open.5, open.6, open.7, open.8, open.9))
+
+
+table(master$OPEN.001e)
+table(master$OPEN.002e)
+table(master$OPEN.003e)
+table(master$OPEN.004e)
+table(master$OPEN.005e)
+table(master$OPEN.006e)
+table(master$OPEN.007e)
+table(master$OPEN.008e)
+table(master$OPEN.009e)
+table(master$OPEN.e)
+
+
+```

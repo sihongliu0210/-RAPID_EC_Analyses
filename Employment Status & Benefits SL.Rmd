@@ -1,0 +1,343 @@
+---
+title: "Employment Status & Benefits"
+author: "Sihong"
+date: "9/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+```{r, include=FALSE}
+# load scored master data --------------------------------------------------------
+load(here::here("data/scored.Rdata"))
+```
+
+```{r, echo=FALSE, message = FALSE}
+total_weeks = max(scored$Week, na.rm=T)
+key_demo <- c ("race_cat", "race_ethnic", "poverty_cat")
+
+ep <- scored %>%
+  select (CaregiverID, Week, contains ("free_"), employment_decreased, sick_leave, losejob_sickleave, losejob_sickleave_cat, unemployment, unemployed, public_benefits, contains ("pb_"), work_status, employment_change, key_demo)
+```
+
+# Employment Status
+## Percentage of Different Employment Status Across Timepoints
+```{r, echo=FALSE, message = FALSE}
+ep_status <- ep %>%
+  count (work_status, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (work_status != "NA")) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n))  
+print(ep_status)
+
+ep_status %>%
+  filter (work_status == "Unemployed")%>%
+  ggplot ( mapping = aes (y = race_ethnic, x = prop))+
+  geom_col() + 
+  ggtitle ("Percentage of Unemployed")+
+  coord_flip()+
+  facet_wrap (~poverty_cat)
+```
+
+# Employment Decreased
+## Percentage of Employment Decreased Across Timepoints
+```{r, echo=FALSE, message = FALSE}
+ep_decrease <- ep %>%
+  count (employment_decreased, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (employment_decreased == 0 | employment_decreased == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (employment_decreased == 1) 
+print(ep_decrease)
+
+  ggplot (data = ep_decrease,mapping = aes (y = race_ethnic, x = prop))+
+  geom_col() + 
+  coord_flip()+
+  facet_wrap (~poverty_cat)
+```
+
+## Employment Decreased Change Over Time
+
+```{r, echo=FALSE, message = FALSE}
+ep_week <- ep %>%
+  group_by (Week) %>%
+  summarize (total = n(), 
+             epdc_pct = sum (employment_decreased, na.rm = TRUE)/total*100) %>%
+  filter (Week != 0)
+
+ggplot (data = ep_week, aes (x = Week, y = epdc_pct)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Employment Decreased Change Over Time Breakdown by Income
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_income <- ep %>%
+  group_by (Week, poverty_cat) %>%
+  summarize (total = n(), 
+             epdc_pct = sum (employment_decreased, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = ep_week_income, aes (x = Week, y = epdc_pct, color = poverty_cat)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Employment Decreased Change Over Time Breakdown by Race/Ethnicity
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_race <- ep %>%
+  group_by (Week, race_ethnic) %>%
+  summarize (total = n(), 
+             epdc_pct = sum (employment_decreased, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX"))
+
+ggplot (data = ep_week_race, aes (x = Week, y = epdc_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Employment Decreased Change Over Time Breakdown by Race/Ethnicity and Income
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_race_income <- ep %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarize (total = n(), 
+             epdc_pct = sum (employment_decreased, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0 & Week != 20)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX")& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = ep_week_race_income, aes (x = Week, y = epdc_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) + 
+  facet_wrap (~poverty_cat)
+```
+*Filtered week 20 because of low sample size
+
+#For People Qualified for Unemployemnt Benefits, the Public Benefits They Got
+
+```{r, echo=FALSE, message = FALSE}
+pbenefits <- ep %>%
+  filter (public_benefits == "Yes") %>%
+  summarise (n = n(), 
+             pb_health_pct = sum (pb_health, na.rm = TRUE)/n*100, 
+             pb_food_pct = sum (pb_food, na.rm = TRUE)/n*100, 
+             pb_income_pct = sum (pb_income, na.rm = TRUE)/n*100, 
+             pb_disability_pct = sum (pb_disability, na.rm = TRUE)/n*100, 
+             pb_military.pension_pct = sum (pb_military.pension, na.rm = TRUE)/n*100, 
+             pb_military.medical_pct = sum (pb_military.medical, na.rm = TRUE)/n*100, 
+             pb_military.disability_pct = sum (pb_military.disability, na.rm = TRUE)/n*100, 
+             pb_housing_pct = sum (pb_housing, na.rm = TRUE)/n*100, 
+             pb_childcare_pct = sum (pb_childcare, na.rm = TRUE)/n*100, 
+             pb_other_pct = sum (pb_other, na.rm = TRUE)/n*100)
+print(t(select(pbenefits, -n)))
+```
+
+# Access to Free Food
+## Percentage of Access to Free Food Across Timepoints
+```{r, echo=FALSE, message = FALSE}
+free_food <- ep %>%
+  count (free_food, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (free_food == 0 | free_food == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (free_food == 1) 
+print(free_food)
+
+  ggplot (data = free_food,mapping = aes (y = race_ethnic, x = prop))+
+  geom_col() + 
+  coord_flip()+
+  facet_wrap (~poverty_cat)
+```
+
+## Access to Free Food Change Over Time
+
+```{r, echo=FALSE, message = FALSE}
+ep_week <- ep %>%
+  group_by (Week) %>%
+  summarize (total = n(), 
+             ffood_pct = sum (free_food, na.rm = TRUE)/total*100) %>%
+  filter (Week != 0)
+
+ggplot (data = ep_week, aes (x = Week, y = ffood_pct)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Access to Free Food Change Over Time Breakdown by Income
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_income <- ep %>%
+  group_by (Week, poverty_cat) %>%
+  summarize (total = n(), 
+             ffood_pct = sum (free_food, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = ep_week_income, aes (x = Week, y = ffood_pct, color = poverty_cat)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Access to Free Food Change Over Time Breakdown by Race/Ethnicity
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_race <- ep %>%
+  group_by (Week, race_ethnic) %>%
+  summarize (total = n(), 
+             ffood_pct = sum (free_food, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX"))
+
+ggplot (data = ep_week_race, aes (x = Week, y = ffood_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Access to Free Food Change Over Time Breakdown by Race/Ethnicity and Income
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_race_income <- ep %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarize (total = n(), 
+             ffood_pct = sum (free_food, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0 & Week != 20)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX")& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = ep_week_race_income, aes (x = Week, y = ffood_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) + 
+  facet_wrap (~poverty_cat)
+```
+*Note that week 20 was filtered out for this Table because of lack of data for black low-income families.
+
+#Free Lunch for Children
+##Percentage of Free Lunch for Children Across Timepoints
+```{r, echo=FALSE, message = FALSE}
+free_lunch <- ep %>%
+  count (free_lunch_current, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (free_lunch_current == 0 | free_lunch_current == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (free_lunch_current == 1) 
+
+print (free_lunch)
+
+  ggplot (data = free_lunch, mapping = aes (y = race_ethnic, x = prop))+
+  geom_col() + 
+  coord_flip()+
+  facet_wrap (~poverty_cat)
+```
+
+## Gained Free Lunch
+```{r, echo=FALSE, message = FALSE}
+free_lunch_g <- ep %>%
+  count (gained_free_lunch, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (gained_free_lunch == 0 | gained_free_lunch == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (gained_free_lunch == 1) 
+
+print (free_lunch_g)
+
+  ggplot (data = free_lunch_g, mapping = aes (y = race_ethnic, x = prop))+
+  geom_col() + 
+  coord_flip()+
+  facet_wrap (~poverty_cat)
+
+```
+
+## Lost Free Lunch
+```{r, echo=FALSE, message = FALSE}
+free_lunch_l <- ep %>%
+  count (lost_free_lunch, poverty_cat, race_ethnic) %>%
+  filter ((poverty_cat == "Low Income" | poverty_cat == "High Income") & (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX") & (lost_free_lunch == 0 | lost_free_lunch == 1 )) %>%
+ group_by (poverty_cat, race_ethnic)%>%
+ mutate(prop = prop.table(n)) %>%
+  filter (lost_free_lunch == 1) 
+
+print (free_lunch_l)
+
+  ggplot (data = free_lunch_l, mapping = aes (y = race_ethnic, x = prop))+
+  geom_col() + 
+  coord_flip()+
+  facet_wrap (~poverty_cat)
+
+```
+
+## Free Lunch for Children Change Over Time Breakdown by Income
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_income <- ep %>%
+  group_by (Week, poverty_cat) %>%
+  summarize (total = n(), 
+             flunch_pct = sum (free_lunch_current, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0)& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = ep_week_income, aes (x = Week, y = flunch_pct, color = poverty_cat)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+
+## Free Lunch for Children Change Over Time Breakdown by Race/Ethnicity
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_race <- ep %>%
+  group_by (Week, race_ethnic) %>%
+  summarize (total = n(), 
+             flunch_pct = sum (free_lunch_current, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0 & Week != 20)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX"))
+
+ggplot (data = ep_week_race, aes (x = Week, y = flunch_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) 
+```
+*Filtered week 20 because of low sample size
+
+## Free Lunch for Children Change Over Time Breakdown by Race/Ethnicity and Income
+
+```{r, echo=FALSE, message = FALSE}
+ep_week_race_income <- ep %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarize (total = n(), 
+             flunch_pct = sum (free_lunch_current, na.rm = TRUE)/total*100) %>%
+  filter ((Week != 0 & Week != 20 & Week != 22 & Week != 24)& (race_ethnic == "White" | race_ethnic == "Black" | race_ethnic == "LatinX")& (poverty_cat == "Low Income" | poverty_cat == "High Income"))
+
+ggplot (data = ep_week_race_income, aes (x = Week, y = flunch_pct, color = race_ethnic)) +
+  geom_point (size = 2) +
+  geom_line()+
+   scale_x_continuous(breaks = c(1:total_weeks))+
+    scale_y_continuous(limits = c(0,100)) + 
+  facet_wrap (~poverty_cat)
+```
+*Filtered week 20, 22, 24 because of low sample size
+
+
+
+

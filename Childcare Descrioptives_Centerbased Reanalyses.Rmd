@@ -1,0 +1,395 @@
+---
+title: "Childcare Descriptives - Centerbased Analyses"
+author: "Sihong"
+date: "10/19/2020"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(readr)
+library(haven)
+```
+
+```{r, echo=FALSE, message = FALSE}
+#Define functions
+moe.p = function(p, n){
+  q = 1-p
+  moe = 1.96*sqrt((p*q)/n)
+  return(moe)
+}
+```
+
+```{r, echo=FALSE, message = FALSE}
+#load master data file
+master = read_sav(here("data/MasterFile_groupings.sav"))
+
+master = filter(master, CaregiverID != "") 
+master = master %>%
+  group_by(CaregiverID, Week) %>%
+  filter(row_number() == max(row_number())) %>%
+  ungroup()
+```
+
+```{r, echo=FALSE, message = FALSE}
+#Score key demos
+##Race/ethnicity
+
+master <- master %>%
+    mutate(
+      minority = ifelse(RaceGroup != 5, 1, 0),
+      black = ifelse(RaceGroup == 3, 1, 0),
+      native = ifelse(RaceGroup == 1, 1, 0),
+      asian = ifelse(RaceGroup == 2, 1, 0),
+      hawaii = ifelse(RaceGroup == 4, 1, 0),
+      white = ifelse(RaceGroup == 5, 1, 0),
+      other_race = ifelse(RaceGroup %in% c(6, 7), 1, 0))
+
+master <- master %>%
+      mutate(latinx = case_when(
+        DEMO.008 == 1 ~ 1,
+        DEMO.008 == 0 ~ 0,
+        DEMO.008.2 == 0 ~ 0,
+        DEMO.008.2 == 1 ~ 1,
+        DEMO.008.2 == 2 ~ 1,
+        TRUE ~ NA_real_))
+
+master <- master %>%
+mutate (race_ethnic = case_when(
+      black == 1 ~ "Black",
+      latinx == 1 ~ "Latinx",
+      !is.na(black) ~ "White",
+      !is.na(latinx) ~ "White",
+      TRUE ~ NA_character_))  
+
+##Povertyline
+master <- master %>%
+  mutate (poverty_cat = factor(FPL.150, labels = c("High Income", "Low Income")))
+
+#Single parent status
+master <- master %>%
+      mutate(single = case_when(
+        DEMO.002 %in% c(3,4,5,7,8) ~ 1,
+        DEMO.011 %in% c(2,4) ~ 1, 
+        !is.na(DEMO.002) ~ 0,
+        !is.na(DEMO.011) ~ 0,
+        TRUE ~ NA_real_))
+master <- master %>%
+  mutate (single_cat = factor(single, labels = c("Dual parent", "Single parent")))
+
+```
+
+```{r, echo=FALSE, message = FALSE}
+#Select childcare variables
+key_demo_rc <- c ("race_ethnic", "poverty_cat", "single_cat")
+total_weeks = max(master$Week, na.rm=T)
+ccare_rc <- master %>%
+  select (CaregiverID, Week, BaselineWeek, key_demo_rc, contains ("POLICY.009"), contains ("POLICY.015_"), contains ("POLICY.015.2_"), contains ("POLICY.016_"))%>%
+  mutate (WeekD = Week - BaselineWeek, 
+          SvType = case_when(WeekD == 1 ~ "baseline", 
+                             WeekD > 1 ~ "followup"))
+
+#Rename variables to reflect the content
+ccare_rc <- ccare_rc %>%
+  mutate (c_nonparental_pre.1 = POLICY.009.a, 
+          c_nonparental_pre.2 = POLICY.009.a.2,
+          c_nonparental_crt = POLICY.009.b,
+          c_center_pre.1 = POLICY.015_1,
+          c_unpaid_pre.1 = POLICY.015_2,
+          c_paid_pre.1 = POLICY.015_3,
+          c_home_pre.1 = POLICY.015_4,
+          c_center.2_pre = POLICY.015.2_1,
+          c_unpaid.2_pre = POLICY.015.2_2,
+          c_paid.2_pre = POLICY.015.2_3,
+          c_home.2_pre = POLICY.015.2_4,
+          c_center_crt = POLICY.016_1,
+          c_unpaid_crt = POLICY.016_2,
+          c_paid_crt = POLICY.016_3,
+          c_home_crt = POLICY.016_4) %>%
+  select(CaregiverID, Week, BaselineWeek, WeekD, SvType, key_demo_rc, contains ("c_"))
+
+#Converge similar items (Week 9 & 10, for example, POLICY.009.a & POLICYL.009.a.2 were asked for different people)
+
+ccare_rc$c_nonparental_pre=rowSums(cbind(ccare_rc$c_nonparental_pre.1,ccare_rc$c_nonparental_pre.2), na.rm = TRUE)
+ccare_rc$c_center_pre=rowSums(cbind(ccare_rc$c_center_pre.1,ccare_rc$c_center.2_pre), na.rm = TRUE)
+ccare_rc$c_paid_pre=rowSums(cbind(ccare_rc$c_paid_pre.1,ccare_rc$c_paid.2_pre), na.rm = TRUE)
+ccare_rc$c_unpaid_pre=rowSums(cbind(ccare_rc$c_unpaid_pre.1,ccare_rc$c_unpaid.2_pre), na.rm = TRUE)
+ccare_rc$c_home_pre=rowSums(cbind(ccare_rc$c_home_pre.1,ccare_rc$c_home.2_pre), na.rm = TRUE)
+
+ccare_rc <- ccare_rc%>%
+  mutate (c_nonparental_pre = (na_if (c_nonparental_pre, 0)),
+          c_center_pre = (na_if(c_center_pre,0)),
+          c_paid_pre = (na_if(c_paid_pre,0)),
+          c_unpaid_pre = (na_if(c_unpaid_pre,0)),
+          c_home_pre = (na_if(c_home_pre,0)))
+
+ccare_rc <- ccare_rc%>%
+  mutate (c_nonparental_pre = na_if (c_nonparental_pre, 3),
+          c_nonparental_crt = na_if (c_nonparental_crt, 3))
+
+ccare_rc <- ccare_rc%>%
+  mutate (c_nonparental_pre = case_when (
+                              c_nonparental_pre == 1 ~ 1,
+                              c_nonparental_pre == 2 ~ 0),
+          c_nonparental_crt = case_when (
+                              c_nonparental_crt == 1 ~ 1,
+                              c_nonparental_crt == 2 ~ 0),
+          c_noncenter_pre = case_when(c_unpaid_pre == 1 | c_paid_pre == 1 |c_home_pre == 1 ~ 1),
+          c_noncenter_crt = case_when(c_unpaid_crt == 1 | c_paid_crt == 1 |c_home_crt == 1 ~ 1))
+
+num_responses = function(x){length(which(!is.na(x)))}
+ccare.num = ccare_rc %>%
+  group_by(Week) %>%
+  summarize_all(num_responses) %>%
+  gather("Variable", "num_responses",-Week) %>%
+  mutate(week = paste0("Week", Week),
+         week = factor(Week, levels = paste0("Week", c(1:total_weeks)))) %>%
+  spread(Week, num_responses)
+
+```
+
+# Non-Parental Childcare Use
+```{r, echo=FALSE, message = FALSE}
+#looks like some families also answered the per question several times, so need to select only one response from each family
+cc_np_pre <- ccare_rc %>%
+  filter (c_nonparental_pre != "NA") %>%
+  group_by(CaregiverID)%>%
+  filter (Week == min(Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             Percent = sum(c_nonparental_pre, na.rm = TRUE)/n)%>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "a.pre")
+
+cc_np_after <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & (Week == 5 | Week == 6)) %>%
+  group_by (CaregiverID) %>%
+  filter (Week == min (Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             Percent = sum(c_nonparental_crt, na.rm = TRUE)/n)%>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "b.after")
+
+cc_np_current <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & Week >= 9)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max (Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             Percent = sum(c_nonparental_crt, na.rm = TRUE)/n)%>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "c.current")
+
+cc_np <- as.data.frame (full_join(full_join (cc_np_pre, cc_np_after), cc_np_current))
+
+cc_np %>%
+  ggplot (mapping = aes (x = time, y = Percent*100, fill = time)) +
+  geom_bar(stat = "identity", position = position_dodge(1))+ 
+  geom_text(aes(label = round(Percent*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (Percent*100-moe*100), 
+                     ymax = (Percent*100+moe*100)),
+                 width = .5, position = position_dodge(1)) 
+```
+
+# Center-based Childcare use 
+```{r, echo=FALSE, message = FALSE}
+cc_np_pre <- ccare_rc %>%
+  filter (c_nonparental_pre != "NA") %>%
+  group_by(CaregiverID)%>%
+  filter (Week == min(Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             center = sum(c_center_pre, na.rm = TRUE)/n,
+             noncenter = sum(c_noncenter_pre, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("center","noncenter"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "a.pre")
+
+cc_np_after <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & (Week == 5 | Week == 6)) %>%
+  group_by (CaregiverID) %>%
+  filter (Week == min (Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             center = sum(c_center_crt, na.rm = TRUE)/n,
+             noncenter = sum(c_noncenter_crt, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("center","noncenter"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "b.after")
+
+cc_np_current <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & Week >= 9)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max (Week))%>%
+  ungroup()%>%
+ summarise (n = n(), 
+             center = sum(c_center_crt, na.rm = TRUE)/n,
+             noncenter = sum(c_noncenter_crt, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("center","noncenter"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "c.current")
+
+cc_np <- as.data.frame (full_join(full_join (cc_np_pre, cc_np_after), cc_np_current))
+
+cc_np %>%
+  ggplot (mapping = aes (x = ChildCareMethod, y = Percent*100, fill = ChildCareMethod)) +
+  geom_bar(stat = "identity", position = position_dodge(1))+ 
+  geom_text(aes(label = round(Percent*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (Percent*100-moe*100), 
+                     ymax = (Percent*100+moe*100)),
+                 width = .5, position = position_dodge(1)) +
+  facet_wrap (~time)
+```
+
+# Frequency of All Four Types
+
+```{r, echo=FALSE, message = FALSE}
+
+cc_np_pre <- ccare_rc %>%
+  filter (c_nonparental_pre != "NA") %>%
+  #filter (c_nonparental_pre == 1 )%>%
+  summarise (n = n(), 
+             c_unpaid = sum(c_unpaid_pre, na.rm = TRUE)/n,
+             c_paid = sum(c_paid_pre, na.rm = TRUE)/n,
+             c_center = sum(c_center_pre, na.rm = TRUE)/n,
+             c_home = sum(c_home_pre, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("c_unpaid","c_paid", "c_center", "c_home"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "a.pre")
+
+cc_np_after <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & (Week == 5 | Week == 6)) %>%
+  group_by (CaregiverID) %>%
+  filter (Week == min (Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             c_unpaid = sum(c_unpaid_crt, na.rm = TRUE)/n,
+             c_paid = sum(c_paid_crt, na.rm = TRUE)/n,
+             c_center = sum(c_center_crt, na.rm = TRUE)/n,
+             c_home = sum(c_home_crt, na.rm = TRUE)/n) %>%
+  pivot_longer(cols = c("c_unpaid","c_paid", "c_center", "c_home"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "b.after")
+
+cc_np_current <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & Week >= 9)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max (Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             c_unpaid = sum(c_unpaid_crt, na.rm = TRUE)/n,
+             c_paid = sum(c_paid_crt, na.rm = TRUE)/n,
+             c_center = sum(c_center_crt, na.rm = TRUE)/n,
+             c_home = sum(c_home_crt, na.rm = TRUE)/n) %>%
+  pivot_longer(cols = c("c_unpaid","c_paid", "c_center", "c_home"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n,
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "c.current")
+
+
+cc_np <- as.data.frame (full_join(full_join (cc_np_pre, cc_np_after), cc_np_current))
+
+cc_np %>%
+  ggplot (mapping = aes (x = ChildCareMethod, y = Percent*100, fill = ChildCareMethod)) +
+  geom_bar(stat = "identity", position = position_dodge(1))+ 
+  geom_text(aes(label = round(Percent*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (Percent*100-moe*100), 
+                     ymax = (Percent*100+moe*100)),
+                 width = .5, position = position_dodge(1)) +
+  facet_wrap (~time)
+```
+
+# Combine Parental, Center-based nonparental, and Non-centerbased nonparental
+
+```{r, echo=FALSE, message = FALSE}
+ccare_rc <- ccare_rc %>%
+  mutate (c_parental_pre = case_when (c_nonparental_pre == 0 ~ 1),
+          c_parental_crt = case_when (c_nonparental_crt == 0 ~ 1))
+
+cc_np_pre <- ccare_rc %>%
+  filter (c_nonparental_pre != "NA") %>%
+  group_by(CaregiverID)%>%
+  filter (Week == min(Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             parent = sum(c_parental_pre, na.rm = TRUE)/n,
+             center = sum(c_center_pre, na.rm = TRUE)/n,
+             noncenter_nonparent = sum(c_noncenter_pre, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("parent", "center","noncenter_nonparent"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "a.pre")
+
+cc_np_after <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & (Week == 5 | Week == 6)) %>%
+  group_by (CaregiverID) %>%
+  filter (Week == min (Week))%>%
+  ungroup()%>%
+  summarise (n = n(), 
+             parent = sum(c_parental_crt, na.rm = TRUE)/n,
+             center = sum(c_center_crt, na.rm = TRUE)/n,
+             noncenter_nonparent = sum(c_noncenter_crt, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("parent", "center","noncenter_nonparent"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "b.after")
+
+
+cc_np_current <- ccare_rc %>%
+  filter (c_nonparental_crt != "NA" & Week >= 9)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max (Week))%>%
+  ungroup()%>%
+ summarise (n = n(), 
+             parent = sum(c_parental_crt, na.rm = TRUE)/n,
+             center = sum(c_center_crt, na.rm = TRUE)/n,
+             noncenter_nonparent = sum(c_noncenter_crt, na.rm = TRUE)/n)%>%
+  pivot_longer(cols = c("parent", "center","noncenter_nonparent"), 
+               names_to = "ChildCareMethod", 
+               values_to = "Percent" ) %>%
+  mutate (count = Percent * n, 
+          moe = map2_dbl(Percent, n, moe.p),
+          time = "c.current")
+
+cc_np <- as.data.frame (full_join(full_join (cc_np_pre, cc_np_after), cc_np_current))
+
+cc_np %>%
+  ggplot (mapping = aes (x = ChildCareMethod, y = Percent*100, fill = ChildCareMethod)) +
+  geom_bar(stat = "identity", position = position_dodge(1))+ 
+  geom_text(aes(label = round(Percent*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (Percent*100-moe*100), 
+                     ymax = (Percent*100+moe*100)),
+                 width = .5, position = position_dodge(1)) +
+  facet_wrap (~time)
+```
