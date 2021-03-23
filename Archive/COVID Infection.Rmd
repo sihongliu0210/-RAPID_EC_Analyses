@@ -1,0 +1,1036 @@
+---
+title: "COVID Infection Analyses"
+author: "Sihong"
+date: "11/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(readr)
+library(haven)
+library(BSDA)
+library(naniar)
+```
+
+
+```{r, echo=FALSE, message = FALSE}
+#Define functions
+moe.p = function(p, n){
+  q = 1-p
+  moe = 1.96*sqrt((p*q)/n)
+  return(moe)
+}
+
+moe.m = function(sd,n){
+  moe = 1.96*sd/sqrt(n)
+  return(moe)}
+
+combine.cat = function(x, cols, id, newvar.name){
+  subset = x[,c(id, "Week", cols)]
+  names(subset) = c("id", "Week", paste0("X",1:length(cols)))
+  subset = suppressWarnings(gather(subset, "key", "value", -id, -Week))
+  subset = filter(subset, !is.na(value))
+  subset$key = gsub("X", "", subset$key)
+  subset = group_by(subset, id, Week)
+  subset = summarize(subset, newvar = paste(key, collapse = ",")) %>% ungroup()
+  names(subset) = c(id,"Week", newvar.name)
+  x = suppressMessages(full_join(x, subset))
+  return(x)
+}
+
+find_items = function(string, data2){
+  items = names(data2)
+  locations = which(grepl(string, items))
+  final = items[locations]
+  return(final)
+}
+
+my.max = function(x) ifelse (!all(is.na(x)), max(x,na.rm = TRUE), NA)
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+#OR load master data file
+master = read_sav(here("data/MasterFile_groupings.sav"))
+
+# Remove cases should be excluded
+master <- master %>%
+  filter ( CaregiverID != "" & is.na(Exclude) == T)
+
+master = master %>%
+  group_by(CaregiverID, Week) %>%
+  filter(row_number() == max(row_number())) %>%
+  ungroup()
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+#Code demographics
+master <- master %>%
+  mutate (month = case_when(
+                  Week == 0 ~ "Pre-COVID",
+                  Week >0 & Week <= 4 ~ "April",
+                  Week >=5 & Week <=8 ~ "May",
+                  Week >=9 & Week <=13 ~ "June",
+                  Week >=14 & Week <=17 ~ "July",
+                  Week >=18 & Week <=21 ~ "August",
+                  Week >=22 & Week <=26 ~ "September",
+                  Week >=27 ~ "October"), 
+           baseline = case_when (Week - BaselineWeek == 1 ~ 1, 
+                                 Week - BaselineWeek > 1 ~ 0))
+
+##Race/ethnicity - 1 = black, 2 = latinx, 3 = white
+
+master <- master %>%
+    mutate(
+      minority = ifelse(RaceGroup != 5, 1, 0),
+      black = ifelse(RaceGroup == 3, 1, 0),
+      native = ifelse(RaceGroup == 1, 1, 0),
+      asian = ifelse(RaceGroup == 2, 1, 0),
+      hawaii = ifelse(RaceGroup == 4, 1, 0),
+      white = ifelse(RaceGroup == 5, 1, 0),
+      other_race = ifelse(RaceGroup %in% c(6, 7), 1, 0))
+
+master <- master %>%
+      mutate(latinx = case_when(
+        DEMO.008 == 1 ~ 1,
+        DEMO.008 == 0 ~ 0,
+        DEMO.008.2 == 0 ~ 0,
+        DEMO.008.2 == 1 ~ 1,
+        DEMO.008.2 == 2 ~ 1,
+        TRUE ~ NA_real_))
+
+master <- master %>%
+mutate (race_ethnic = case_when(
+      black == 1 ~ "1",
+      latinx == 1 ~ "2",
+      !is.na(black) ~ "3",
+      !is.na(latinx) ~ "3",
+      TRUE ~ NA_character_))  
+
+##Povertyline - 0 = high income, 1 = low income
+master <- master %>%
+  mutate (poverty_cat = FPL.150)
+
+#Material hardship
+master <- master %>%
+  combine.cat(cols = find_items("FSTR.002_.{1}$", master), 
+              id = "CaregiverID",
+              newvar.name = "FSTR.002_cat")
+  
+
+master <- master %>%
+  mutate (diff_pay_food = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("1", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_), 
+          diff_pay_utilities = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("3", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_),
+          diff_pay_house = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("2", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_),
+          diff_pay_healthcare = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("4", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_),
+          diff_pay_social = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("5", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_),
+          diff_pay_emotional = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("6", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_),
+          diff_pay_childcare = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("7", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_),
+          diff_pay_other = case_when(
+                          FSTR.001 == 0 ~ 0, 
+                          grepl("8", FSTR.002_cat) ~ 1,
+                          TRUE ~ NA_real_))
+
+master <- master %>%
+  rowwise() %>%
+  mutate(material_hardship = case_when(
+    Week == 0 ~ NA_real_,
+    TRUE ~ sum(c_across(starts_with("diff_pay_")), na.rm=T))) %>%
+  ungroup() %>%
+  mutate(num_hardship = material_hardship,
+    material_hardship = ifelse(material_hardship > 0, 1, 0)) 
+
+## Children with special needs
+master <- combine.cat(x = master, 
+                       cols = find_items("HEALTH.005_[0-9]{1}$", master), 
+                       id = "CaregiverID",
+                       newvar.name = "HEALTH.005_cat")
+master <- master %>%
+   mutate (disability = ifelse(grepl("[1-4]", HEALTH.005_cat), 1, 0))
+
+
+## Single parent status
+master <- master %>%
+  mutate (single = case_when (
+                   DEMO.002 %in% c(3,4,5,7,8)~1, 
+                   DEMO.011 %in% c(2,4)~1,
+                   !is.na(DEMO.002)~0,
+                   !is.na(DEMO.011)~0,
+                   TRUE ~ NA_real_))
+                     
+## Employment status
+master <- combine.cat (x = master,
+                       cols = find_items ("JOB.010_.{1,2}$", master), 
+                       id = "CaregiverID",
+                       newvar.name = "JOB.010_cat")
+  
+master$JOB.010_cat = gsub("10", "0", master$JOB.010_cat)
+master$working_pre = ifelse (grepl("[1,2,6]", master$JOB.010_cat), 1, 0)
+master = combine.cat (x = master,
+                       cols = find_items ("JOB.008_.{1,2}$", master), 
+                       id = "CaregiverID",
+                       newvar.name = "JOB.008_cat")
+master$JOB.008_cat = gsub("10", "0", master$JOB.008_cat)
+master <- master %>%
+  mutate (work_status = case_when(
+                        grepl ("1", JOB.008_cat) ~ "1", 
+                        grepl ("2", JOB.008_cat) ~ "1", 
+                        grepl ("3", JOB.008_cat) ~ "0", 
+                        grepl ("4", JOB.008_cat) ~ "0", 
+                        grepl ("5", JOB.008_cat) ~ "1", 
+                        JOB.008.2 == 1 ~ "1",
+                        JOB.008.2 %in% c(2,3) ~ "0",
+                        TRUE~NA_character_),
+          work_status_pre = case_when(
+                        grepl ("1", JOB.010_cat) ~ "1", 
+                        grepl ("2", JOB.010_cat) ~ "1", 
+                        grepl ("3", JOB.010_cat) ~ "0", 
+                        grepl ("4", JOB.010_cat) ~ "0", 
+                        grepl ("5", JOB.010_cat) ~ "1", 
+                        TRUE~NA_character_),
+          ep_change = case_when(
+                        work_status == 1 & work_status_pre == 1 ~ "1", 
+                        work_status == 1 & work_status_pre == 0 ~ "2", 
+                        work_status == 0 & work_status_pre == 1 ~ "3", 
+                        work_status == 0 & work_status_pre == 0 ~ "4", 
+                        TRUE~NA_character_))
+#1 = stable employed 2 = became unemployed 3 = became employed4 = stable unemployed
+
+master_dem <- master %>%
+  group_by (CaregiverID) %>%
+  summarise (BaselineWeek = my.max (BaselineWeek),
+             race_ethnic = my.max(race_ethnic),
+             poverty_cat = my.max(poverty_cat),
+             material_hardship = my.max(material_hardship),
+             disability = my.max (disability),
+             single = my.max (single),
+             work_status = my.max (work_status),
+             work_status_pre = my.max (work_status_pre),
+             ep_change = my.max (ep_change))%>%
+  mutate (race_ethnic = case_when (
+                        race_ethnic == 1 ~ "Black", 
+                        race_ethnic == 2 ~ "Latinx", 
+                        race_ethnic == 3 ~ "White"),
+          poverty_cat = case_when (
+                        poverty_cat == 1 ~ "Low income", 
+                        poverty_cat == 0 ~ "High income"),
+          material_hardship = case_when (
+                        material_hardship == 1 ~ "With material hardship", 
+                        material_hardship == 0 ~ "Without material hardship"),
+          disability = case_when (
+                        disability == 1 ~ "With disability", 
+                        disability == 0 ~ "Without disability"),
+          single = case_when (
+                        single == 1 ~ "Single parent", 
+                        single == 0 ~ "Dual parent"),
+          work_status = case_when (
+                        work_status == 1 ~ "Employed", 
+                        work_status == 0 ~ "Unemployed"),
+          work_status_pre = case_when (
+                        work_status_pre == 1 ~ "Employed", 
+                        work_status_pre == 0 ~ "Unemployed"),
+          ep_change = case_when (
+                        ep_change == 1 ~ "Stable employed", 
+                        ep_change == 2 ~ "Became unemployed", 
+                        ep_change == 3 ~ "Became employed",
+                        ep_change == 4 ~ "Stable unemployed"))
+
+```
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+#Extract COVID Related Questions
+covid <- master %>%
+  select (CaregiverID, Week, month, baseline, contains ("COVID"))
+
+covid <- merge (x = master_dem, y = covid, by.x = "CaregiverID", by.y = "CaregiverID")
+```
+
+# COVID-19 Infection Rate
+
+  * Have you been suspected or diagnosed with COVID-19?\
+    + Yes, suspected\
+    + Yes, diagnosed with a positive test result\
+    + Yes, diagnosed by a healthcare professional or public health official without a test\
+    + No\
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg <- covid %>%
+  group_by (CaregiverID) %>%
+  summarise (COVID.001 = my.max(COVID.001)) %>%
+  mutate (diagnosis = ifelse(COVID.001 %in% c(1,2,3), 1, 0),
+          suspect = ifelse (COVID.001 == 1, 1, 0), 
+          test_positive = ifelse (COVID.001 == 2, 1, 0), 
+          diagnose_no_test = ifelse (COVID.001 == 3, 1, 0), 
+          no = ifelse (COVID.001 == 0, 1, 0))
+covid_dg <- merge (x = master_dem, y = covid_dg, by.x = "CaregiverID", by.y = "CaregiverID")
+```
+
+## Overall Infection Rate
+
+  * Overall, there were 13.09% of caregivers reported suspected or diagnosed with COVID-19. \
+  * Specifically, there were 11.32% of caregivers suspected for COVID-19, 1.33% tested positive, and 0.43% diagnosed by a healthcare professional or public health official without a test.\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = condition)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = condition)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+```
+
+## Race/Ethnicity
+
+  * White caregivers reported significantly lower percentage of test positive for COVID-19 compared to Black and Latinx families\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  filter (race_ethnic != "NA") %>%
+  group_by (race_ethnic) %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = race_ethnic)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Yes/No Breakdown")
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Specific Categories Under Yes")+
+  facet_wrap (~condition)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+pairwise.prop.test(x = covid_dg_smy$count, n = covid_dg_smy$n, p.adjust.method = "holm")
+```
+
+## Poverty Level
+
+  * No significant differences in infection rates by poverty level were found\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  filter (poverty_cat != "NA") %>%
+  group_by (poverty_cat) %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = poverty_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Yes/No Breakdown")
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Specific Categories Under Yes")+
+  facet_wrap (~condition)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+pairwise.prop.test(x = covid_dg_smy$count, n = covid_dg_smy$n, p.adjust.method = "holm")
+```
+
+## Material Hardship
+
+  * Overall, caregivers with material hardship (16.17%) reported higher percentage of suspected or diagnosed COVID-19 compared to caregivers without COVID-19 (10.06%)\
+  * These differences mainly showed in suspected case or diagnosed by a professional without test. No statistically significant difference in the percentage of test-positive cases by material hardship status was found.\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  filter (material_hardship != "NA") %>%
+  group_by (material_hardship) %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = material_hardship)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Yes/No Breakdown")
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = material_hardship, y = prop*100, fill = material_hardship)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Specific Categories Under Yes")+
+  facet_wrap (~condition)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+pairwise.prop.test(x = covid_dg_smy$count, n = covid_dg_smy$n, p.adjust.method = "holm")
+```
+
+## Single Parent Status
+
+  * No significant differences in infection rates by single parent status were found\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  filter (single != "NA") %>%
+  group_by (single) %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = single)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Yes/No Breakdown")
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = single, y = prop*100, fill = single)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Specific Categories Under Yes")+
+  facet_wrap (~condition)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+pairwise.prop.test(x = covid_dg_smy$count, n = covid_dg_smy$n, p.adjust.method = "holm")
+```
+
+## Chidren with Special Needs Status
+
+  * Overall, caregivers of children with special needs (20.09%) reported higher percentage of suspected or diagnosed COVID-19 compared to caregivers of children without special needs (12.22%)\
+  * These differences mainly showed in suspected case or diagnosed by a professional without test. No statistically significant difference in the percentage of test-positive cases by children's disability status was found.\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  filter (disability != "NA") %>%
+  group_by (disability) %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = disability)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Yes/No Breakdown")
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = disability, y = prop*100, fill = disability)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Specific Categories Under Yes")+
+  facet_wrap (~condition)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+pairwise.prop.test(x = covid_dg_smy$count, n = covid_dg_smy$n, p.adjust.method = "holm")
+```
+
+## Employment Status
+
+  * No significant differences in infection rates by working status were found\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_dg_smy <- covid_dg %>%
+  filter (work_status != "NA") %>%
+  group_by (work_status) %>%
+  summarise (n = n(),
+             a.diagnosis = sum(diagnosis, na.rm = TRUE)/n, 
+             b.no = sum(no, na.rm = TRUE)/n,
+             a.suspect = sum(suspect, na.rm = TRUE)/n, 
+             a.test_positive = sum(test_positive, na.rm = TRUE)/n, 
+             a.diagnose_no_test = sum(diagnose_no_test, na.rm = TRUE)/n) %>%
+  pivot_longer (cols = c("a.diagnosis", "b.no", "a.suspect", "a.test_positive", "a.diagnose_no_test"), names_to = "condition", values_to = "prop") %>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_dg_smy %>%
+  filter (condition == "a.diagnosis" | condition == "b.no")%>%
+  ggplot(mapping = aes (x = condition, y = prop*100, fill = work_status)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Yes/No Breakdown")
+
+covid_dg_smy %>%
+  filter (condition != "a.diagnosis" & condition != "b.no")%>%
+  ggplot(mapping = aes (x = work_status, y = prop*100, fill = work_status)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  ggtitle (label = "Specific Categories Under Yes")+
+  facet_wrap (~condition)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+pairwise.prop.test(x = covid_dg_smy$count, n = covid_dg_smy$n, p.adjust.method = "holm")
+```
+
+## For caregiver diagnosed by a healthcare professional but did not get tested, reasons:
+
+  * Note that data are based only on weeks 1-6. Sample size was small, there were only 19 responses. \
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_rs <- covid %>%
+  filter (COVID.001 == 3)%>%
+  summarise (n = n(),
+             test_not_available = sum(COVID.001.a_1, na.rm = TRUE)/n,
+             not_meet_criteria = sum(COVID.001.a_2, na.rm = TRUE)/n,
+             physician_not_recommend = sum(COVID.001.a_3, na.rm = TRUE)/n,
+             other = sum(COVID.001.a_4, na.rm = TRUE)/n) %>%
+  pivot_longer (col = c("test_not_available", "not_meet_criteria", "physician_not_recommend", "other"), names_to = "reasons", values_to = "prop")%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+
+covid_rs %>%
+  ggplot(mapping = aes (y = reasons, x = prop*100, fill = reasons)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(xmin = (prop*100-moe*100), 
+                    xmax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, size = 3, color = "black",  position = position_dodge(1))
+
+```
+
+
+# Hospitalized
+
+  * Among all caregivers reported on this question (before Week 6), there were only 15 hospitalized because of COVID-19.\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_hs <- covid %>%
+  group_by (CaregiverID) %>%
+  summarise (COVID.002 = my.max(COVID.002)) %>%
+  mutate (hospitalize_COVID = ifelse(COVID.002 == 1, 1, 0),
+          hospitalize_other = ifelse (COVID.002 == 2, 1, 0), 
+          no = ifelse (COVID.002 == 0, 1, 0))
+covid_hs <- merge (x = master_dem, y = covid_hs, by.x = "CaregiverID", by.y = "CaregiverID")
+
+covid_hs_smy <- covid_hs%>%
+  filter (COVID.002 != "NA")%>%
+  summarise (n = n(),
+             hospitalize_COVID = sum(hospitalize_COVID, na.rm = TRUE),
+             hospitalize_other = sum(hospitalize_other, na.rm = TRUE),
+             not_hospitalized = sum(no, na.rm = TRUE))
+
+print(covid_hs_smy)
+```
+
+
+# Know Anyone Diagnosed with COVID
+
+## Overall
+  * Among all caregivers reported on this question (Week 29 & 31, n = 1608), there were 1174 (73.01%) reporting that they knew someone in the U.S. who were diagnosed with COVID-19.\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  summarise (n = n(),
+             know_diagnose = sum(COVID.003, na.rm = TRUE)/n)
+
+print(covid_know_dg)
+```
+
+## Race/Ethnicity
+
+  * No significant differences by race/ethnicy were found. \
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  group_by (race_ethnic) %>%
+  summarise (n = n(),
+             prop = sum(COVID.003, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+
+## Poverty Level
+
+  * High-income families had a higher percentage of knowing someone diagnosed with COVID-19 compared to low-income families. \
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (poverty_cat != "NA")%>%
+  group_by (poverty_cat) %>%
+  summarise (n = n(),
+             prop = sum(COVID.003, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Material Hardship
+
+  * The percentage of knowing someone diagnosed with COVID-19 did not significantly vary by material hardship status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (material_hardship != "NA")%>%
+  group_by (material_hardship) %>%
+  summarise (n = n(),
+             prop = sum(COVID.003, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = material_hardship, y = prop*100, fill = material_hardship)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Single parent status
+
+  * The percentage of knowing someone diagnosed with COVID-19 did not significantly vary by single parent status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (single != "NA")%>%
+  group_by (single) %>%
+  summarise (n = n(),
+             prop = sum(COVID.003, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = single, y = prop*100, fill = single)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Child disability status
+
+  * The percentage of knowing someone diagnosed with COVID-19 did not significantly vary by children's disability status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (disability != "NA")%>%
+  group_by (disability) %>%
+  summarise (n = n(),
+             prop = sum(COVID.003, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = disability, y = prop*100, fill = disability)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Work status
+
+  * Employed caregivers have a higher percentage of knowing someone diagnosed with COVID-19 compared to unemployed caregivers \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (work_status != "NA")%>%
+  group_by (work_status) %>%
+  summarise (n = n(),
+             prop = sum(COVID.003, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = work_status, y = prop*100, fill = work_status)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+
+# Know Anyone Hospitalized for COVID
+
+## Overall
+
+  * Among all caregivers reported on this question (Week 29 & 31, n = 1608), there were 563 (35.01%) reporting that they knew someone in the U.S. who were hospitalized for COVID-19.\
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  summarise (n = n(),
+             know_diagnose = sum(COVID.004, na.rm = TRUE)/n)
+
+print(covid_know_dg)
+```
+
+## Race/Ethnicity
+
+  * White families reported a significantly lower percentage of knowing someone in the U.S. hospitalized for COVID-19 comapred to Black or Latinx familiess \
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  group_by (race_ethnic) %>%
+  summarise (n = n(),
+             prop = sum(COVID.004, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+
+## Poverty Level
+
+  * The percentage of knowing someone hospitalized for COVID was not significantly different by poverty level \
+  
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (poverty_cat != "NA")%>%
+  group_by (poverty_cat) %>%
+  summarise (n = n(),
+             prop = sum(COVID.004, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Material Hardship
+
+  * The percentage of knowing someone hospitalized for COVID-19 did not significantly vary by material hardship status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (material_hardship != "NA")%>%
+  group_by (material_hardship) %>%
+  summarise (n = n(),
+             prop = sum(COVID.004, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = material_hardship, y = prop*100, fill = material_hardship)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Single parent status
+
+  * The percentage of knowing someone hospitalized for COVID-19 did not significantly vary by single parent status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (single != "NA")%>%
+  group_by (single) %>%
+  summarise (n = n(),
+             prop = sum(COVID.004, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = single, y = prop*100, fill = single)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Child disability status
+
+  * The percentage of knowing someone hospitalized for COVID-19 did not significantly vary by children's disability status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (disability != "NA")%>%
+  group_by (disability) %>%
+  summarise (n = n(),
+             prop = sum(COVID.004, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = disability, y = prop*100, fill = disability)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```
+
+## Work status
+
+  * The percentage of knowing someone hospitalized for COVID-19 did not significantly vary by caregivers' working status \
+    
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+covid_know_dg <- covid %>%
+  filter (Week == 29 | Week == 31)%>%
+  group_by (CaregiverID) %>%
+  filter (Week == max(Week))%>%
+  ungroup()%>%
+  filter (work_status != "NA")%>%
+  group_by (work_status) %>%
+  summarise (n = n(),
+             prop = sum(COVID.004, na.rm = TRUE)/n)%>%
+  mutate (count = n*prop) %>%
+  mutate (moe = map2_dbl(prop, n, moe.p))
+
+covid_know_dg %>%
+  ggplot(mapping = aes (x = work_status, y = prop*100, fill = work_status)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                    ymax = (prop*100+moe*100)),
+                    width = .3,
+                    position = position_dodge(1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+```

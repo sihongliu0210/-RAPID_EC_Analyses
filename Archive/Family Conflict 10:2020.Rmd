@@ -1,0 +1,2025 @@
+---
+title: "Family Conflict 10/2020"
+author: "Sihong"
+date: "10/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(readr)
+library(haven)
+```
+
+```{r, echo=FALSE, message = FALSE}
+#Define functions
+moe.p = function(p, n){
+  q = 1-p
+  moe = 1.96*sqrt((p*q)/n)
+  return(moe)
+}
+
+moe.m = function(m,sd){
+  moe = 1.96*sd
+  return(moe)
+}
+
+```
+
+```{r, include=FALSE}
+# load scored master data --------------------------------------------------------
+#load(here::here("../../Data Management R3/R data/scored.Rdata"))
+load(here::here("data/scored.Rdata"))
+scored = scored %>%
+  mutate(
+    Week = case_when(
+      Week < 17 ~ Week,
+      Week %% 2 == 0 ~ NA_real_,
+      TRUE ~ Week)
+  ) %>%
+  filter(!is.na(Week))
+
+total_weeks = max(scored$Week, na.rm=T)
+key_demo <- c ("race_ethnic", "poverty_cat", "material_hardship")
+
+fc <- scored %>%
+  select (CaregiverID, Week, BaselineWeek, key_demo, contains ("conflict"), contains ("cohesive"))
+
+num_responses = function(x){length(which(!is.na(x)))}
+fc.num = fc %>%
+  group_by(Week) %>%
+  summarize_all(num_responses) %>%
+  gather("Variable", "num_responses",-Week) %>%
+  mutate(week = paste0("Week", Week),
+         week = factor(Week, levels = paste0("Week", c(1:total_weeks)))) %>%
+  spread(Week, num_responses)
+
+# Select weeks 0,9,11,16
+fc <- fc%>%
+  filter (Week == 0 | Week == 9 | Week == 11 | Week == 16 | Week == 29)%>%
+  mutate (mhardship = (ifelse (material_hardship == 1, "with material hardship", "without material hardship")))
+
+```
+
+
+# Comparisons Using Percentage of Caregivers Who Reported Increased Family Conflict Levels Compared to Pre-COVID
+## Total Family Conflict Increased Percentage
+### Overall  
+ * Results indicate that 62.01% caregivers at Week9, 63.45% caregivers at Week11, and 61.93% caregivers at Week 16 reported increased family conflict levels, compared to pre-COVID. These increases at different timepoints were all statistically significant.\
+ * The percentage of caregivers who reported increased family conflict compared to pre-COVID remained stable at all three time-points.
+ 
+```{r, echo=FALSE, message = FALSE}
+#Restructure data to calculate increases/decreases of family conflict
+##Demographics
+fc_dem <- fc %>%
+  mutate (race = case_when (
+                race_ethnic == "White" ~ 1,
+                race_ethnic == "Black" ~ 2,
+                race_ethnic == "Latinx" ~ 3),
+          income = case_when (
+                poverty_cat == "Low Income" ~ 1,
+                poverty_cat == "High Income" ~ 0), 
+          week9 = case_when (Week == 9 ~ 1, Week != 9 ~ 0),
+          week11 = case_when (Week == 11 ~ 1, Week != 11 ~ 0),
+          week16 = case_when (Week == 16 ~ 1, Week != 16 ~ 0)
+          ) %>%
+  select (CaregiverID, race, income, week9, week11, week16) %>%
+  group_by (CaregiverID) %>%
+  summarise (race = max (race), 
+             income = max (income), 
+             week9 = max(week9, na.rm = TRUE),
+             week11 = max(week11, na.rm = TRUE),
+             week16 = max(week16, na.rm = TRUE),)%>%
+  mutate (race_ethnic = case_when (
+                        race == 1 ~ "White",
+                        race == 2 ~ "Black",
+                        race == 3 ~ "Latinx"),
+          poverty_cat = case_when (
+                        income == 1 ~ "Low Income",
+                        income == 0 ~ "High Income")) %>%
+  select (CaregiverID, race_ethnic, poverty_cat, week9, week11, week16)
+
+  
+##family conflict variables
+
+fc_cg <- fc %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "Week0",
+                  Week == 9 ~ "Week9",
+                  Week == 11 ~ "Week11",
+                  Week == 16 ~ "Week16")
+  ) %>%
+  select (CaregiverID, Week_c, contains ("conflict"))%>%
+  pivot_wider (names_from = Week_c, values_from = c("conflict_total", "conflict_parent", "conflict_child", "conflictSource"))%>%
+  mutate (fc_total_cg9 = conflict_total_Week9-conflict_total_Week0,
+          fc_total_cg11 = conflict_total_Week11-conflict_total_Week0,
+          fc_total_cg16 = conflict_total_Week16-conflict_total_Week0,
+          fc_parent_cg9 = conflict_parent_Week9-conflict_parent_Week0,
+          fc_parent_cg11 = conflict_parent_Week11-conflict_parent_Week0,
+          fc_parent_cg16 = conflict_parent_Week16-conflict_parent_Week0,
+          fc_child_cg9 = conflict_child_Week9-conflict_child_Week0,
+          fc_child_cg11 = conflict_child_Week11-conflict_child_Week0,
+          fc_child_cg16 = conflict_child_Week16-conflict_child_Week0)%>%
+select (CaregiverID, contains ("fc_"))%>%
+mutate (fc_total_cg9_ic = ifelse (fc_total_cg9 > 0, 1, 0),
+        fc_total_cg11_ic = ifelse (fc_total_cg11 > 0, 1, 0),
+        fc_total_cg16_ic = ifelse (fc_total_cg16 > 0, 1, 0),
+        fc_parent_cg9_ic = ifelse (fc_parent_cg9 > 0, 1, 0),
+        fc_parent_cg11_ic = ifelse (fc_parent_cg11 > 0, 1, 0),
+        fc_parent_cg16_ic = ifelse (fc_parent_cg16 > 0, 1, 0),
+        fc_child_cg9_ic = ifelse (fc_child_cg9 > 0, 1, 0),
+        fc_child_cg11_ic = ifelse (fc_child_cg11 > 0, 1, 0),
+        fc_child_cg16_ic = ifelse (fc_child_cg16 > 0, 1, 0))
+
+  
+fc_cg <- merge (x = fc_dem, y = fc_cg)
+
+```
+
+
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & fc_total_cg9_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & fc_total_cg11_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & fc_total_cg16_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = time, y = prop*100, fill = time))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+pairwise.prop.test(x = fc_cg_total$count, n = fc_cg_total$n, p.adjust.method = "holm")
+```
+
+### Total Family Conflict Increased Percentage - Breakdown by Income 
+ * At all three weeks, no significant differences by poverty level were found in the percentage of caregivers who reported increased total family conflict levels from pre- to post-COVID\
+ * For both low- and high-income families, the percentage of caregivers who reported increased family conflict compared to pre-COVID remained stable across all three weeks.
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & poverty_cat != "NA" & fc_total_cg9_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & poverty_cat != "NA" & fc_total_cg11_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & poverty_cat != "NA" & fc_total_cg16_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_low <- fc_cg_total %>%
+  filter (poverty_cat == "Low Income") 
+fc_cg_high <- fc_cg_total %>%
+  filter (poverty_cat == "High Income") 
+ 
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_low$count, n = fc_cg_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_high$count, n = fc_cg_high$n, p.adjust.method = "holm")
+```
+
+### Total Family Conflict Increased Percentage - Breakdown by Race/Ethnicity 
+  * Comparison across race/ethnicity groups:\
+    + At Week 9, Black families reported significantly less percentage of caregivers reporting increased total family conflict than pre-COVID, compared to White families and Latinx families\
+    + No significant differences by race/ethnicity groups were found at weeks 11 and 16.\
+  * Changes across time:\
+    + For families of all three race/ethnicity, the percentage of caregivers who reported increased family conflict compared to pre-COVID did not significantly change across the three timepoints.
+  
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & race_ethnic != "NA" & fc_total_cg9_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & race_ethnic != "NA" & fc_total_cg11_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & race_ethnic != "NA" & fc_total_cg16_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_black <- fc_cg_total %>%
+  filter (race_ethnic == "Black") 
+fc_cg_white <- fc_cg_total %>%
+  filter (race_ethnic == "White") 
+fc_cg_latinx <- fc_cg_total %>%
+  filter (race_ethnic == "Latinx") 
+ 
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_black$count, n = fc_cg_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_white$count, n = fc_cg_white$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_latinx$count, n = fc_cg_latinx$n, p.adjust.method = "holm")
+```
+
+### Total Family Conflict Increased Percentage - Breakdown by Race/Ethnicity and Income
+  * Among low-income families, Black caregivers had significantly lower percentage of reported increased total family conflict compared to Latinx families at Week 9; no other statistically significant differences were found for week 9\
+  * At Week 11 & 16, for For both high- and low-income families, no statistically significant differences were found by race/ethnicity groups in the percentage of caregivers who reported increased total family conflict levels from pre- to post-COVID.
+  
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & race_ethnic != "NA" & poverty_cat != "NA" & fc_total_cg9_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & race_ethnic != "NA"& poverty_cat != "NA" & fc_total_cg11_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & race_ethnic != "NA"& poverty_cat != "NA" & fc_total_cg16_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_total_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat )
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (poverty_cat~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_black <- fc_cg_total %>%
+  filter (race_ethnic == "Black") 
+fc_cg_white <- fc_cg_total %>%
+  filter (race_ethnic == "White") 
+fc_cg_latinx <- fc_cg_total %>%
+  filter (race_ethnic == "Latinx") 
+fc_cg_low <- fc_cg_total %>%
+  filter (poverty_cat == "Low Income") 
+fc_cg_high <- fc_cg_total %>%
+  filter (poverty_cat == "High Income") 
+ 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_low$count, n = fc_cg_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_high$count, n = fc_cg_high$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_black$count, n = fc_cg_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_white$count, n = fc_cg_white$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_latinx$count, n = fc_cg_latinx$n, p.adjust.method = "holm")
+```
+
+
+## Family Spousal Conflict Increased Percentage - Total Responses  
+ * Results indicate that 32.84% caregivers at Week9, 30.36% caregivers at Week11, and 32.19% caregivers at Week 16 reported increased spousal conflict levels, compared to pre-COVID. \
+ * The percentage of caregivers who reported increased family spousal conflict compared to pre-COVID remained relatively stable across the three weeks. Differences between week 9 and 16 were statistically significant. 
+
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & fc_parent_cg9_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1& fc_parent_cg11_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & fc_parent_cg16_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = time, y = prop*100, fill = time))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+pairwise.prop.test(x = fc_cg_total$count, n = fc_cg_total$n, p.adjust.method = "holm")
+```
+
+### Family Spousal Conflict Increased Percentage - Breakdown by Income 
+ * At any of the three timepoints, no significant differences by poverty level were found in the percentage of caregivers who reported increased spousal conflict levels from pre- to post-COVID.\
+ * For both low- and high-income families, the percentage of caregivers who reported increased family spousal conflict compared to pre-COVID did not change significantly over three timepoints.
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & poverty_cat != "NA" & fc_parent_cg9_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & poverty_cat != "NA" & fc_parent_cg11_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & poverty_cat != "NA" & fc_parent_cg16_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_low <- fc_cg_total %>%
+  filter (poverty_cat == "Low Income") 
+fc_cg_high <- fc_cg_total %>%
+  filter (poverty_cat == "High Income") 
+ 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_low$count, n = fc_cg_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_high$count, n = fc_cg_high$n, p.adjust.method = "holm")
+```
+
+### Family Spousal Conflict Increased Percentage - Breakdown by Race/Ethnicity 
+  * Comparison across race/ethnicity groups:\
+    + No statistically significant race/ethnicity differences were found for Week 9, 11 & 16\
+  * Changes across time:\
+    + For Black, Latinx, and White families, the percentage of caregivers who reported increased spousal conflict compared to pre-COVID did not significantly change across the three timepoints.
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & race_ethnic != "NA" & fc_parent_cg9_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & race_ethnic != "NA" & fc_parent_cg11_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & race_ethnic != "NA" & fc_parent_cg16_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_black <- fc_cg_total %>%
+  filter (race_ethnic == "Black") 
+fc_cg_white <- fc_cg_total %>%
+  filter (race_ethnic == "White") 
+fc_cg_latinx <- fc_cg_total %>%
+  filter (race_ethnic == "Latinx") 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_black$count, n = fc_cg_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_white$count, n = fc_cg_white$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_latinx$count, n = fc_cg_latinx$n, p.adjust.method = "holm")
+```
+
+
+### Total Family Conflict Increased Percentage - Breakdown by Race/Ethnicity and Income
+  * For both high- and low-income families, no statistically significant differences were found by race/ethnicity groups in the percentage of caregivers who reported increased spousal conflict levels from pre- to post-COVID.
+  *Note: sample size in certain groups, especially Black low-income families were very small, so we probably do not have the power to detect significant differences. 
+  
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & race_ethnic != "NA" & poverty_cat != "NA" & fc_parent_cg9_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & race_ethnic != "NA"& poverty_cat != "NA" & fc_parent_cg11_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & race_ethnic != "NA"& poverty_cat != "NA" & fc_parent_cg16_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_parent_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat )
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (poverty_cat~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_black <- fc_cg_total %>%
+  filter (race_ethnic == "Black") 
+fc_cg_white <- fc_cg_total %>%
+  filter (race_ethnic == "White") 
+fc_cg_latinx <- fc_cg_total %>%
+  filter (race_ethnic == "Latinx") 
+fc_cg_low <- fc_cg_total %>%
+  filter (poverty_cat == "Low Income") 
+fc_cg_high <- fc_cg_total %>%
+  filter (poverty_cat == "High Income") 
+ 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_low$count, n = fc_cg_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_high$count, n = fc_cg_high$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_black$count, n = fc_cg_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_white$count, n = fc_cg_white$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_latinx$count, n = fc_cg_latinx$n, p.adjust.method = "holm")
+```
+
+
+
+## Family Parent-Child Conflict Increased Percentage - Total Responses  
+ * Results indicate that 61.12% caregivers at Week9, 61.50% caregivers at Week11, and 59.89% caregivers at Week 16 reported increased parent-child conflict levels, compared to pre-COVID.\
+ * The percentage of caregivers who reported increased family parent-child conflict compared to pre-COVID remained stable at all three timepints. 
+
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & fc_child_cg9_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & fc_child_cg11_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & fc_child_cg16_ic!= "NA")%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = time, y = prop*100, fill = time))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+pairwise.prop.test(x = fc_cg_total$count, n = fc_cg_total$n, p.adjust.method = "holm")
+```
+
+### Family Parent-Child Conflict Increased Percentage - Breakdown by Income 
+ * No significant differences by poverty level were found in the percentage of caregivers who reported increased parent-child conflict levels from pre- to post-COVID \
+ * For both low- and high-income families, the percentage of caregivers who reported increased parent-child conflict compared to pre-COVID remained stable at all three timepoints.
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & poverty_cat != "NA"& fc_child_cg9_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & poverty_cat != "NA"& fc_child_cg11_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & poverty_cat != "NA"& fc_child_cg16_ic!= "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, poverty_cat)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_low <- fc_cg_total %>%
+  filter (poverty_cat == "Low Income") 
+fc_cg_high <- fc_cg_total %>%
+  filter (poverty_cat == "High Income") 
+ 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_low$count, n = fc_cg_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_high$count, n = fc_cg_high$n, p.adjust.method = "holm")
+```
+
+### Family Parent-Child Conflict Increased Percentage - Breakdown by Race/Ethnicity 
+  * Comparison across race/ethnicity groups:\
+    + At Week 9, significantly smaller percentage of Black families reported increases in parent-child conflict than pre-COVID, compared to Latinx and Black families\
+    + At Week 9, marginally significantly smaller percentage of Black families reported increases in parent-child conflict than pre-COVID, compared to Latinx families\
+    + At Week 16, the differences by race/ethnicity groups were not statistically different\
+  * Changes across time:\
+    + For all families, the percentage of caregivers who reported increased parent-child conflict compared to pre-COVID did not significantly change across the three timepoints.
+   
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & race_ethnic != "NA" & fc_child_cg9_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & race_ethnic != "NA" & fc_child_cg11_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & race_ethnic != "NA" & fc_child_cg16_ic!= "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic)
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_black <- fc_cg_total %>%
+  filter (race_ethnic == "Black") 
+fc_cg_white <- fc_cg_total %>%
+  filter (race_ethnic == "White") 
+fc_cg_latinx <- fc_cg_total %>%
+  filter (race_ethnic == "Latinx") 
+ 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_black$count, n = fc_cg_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_white$count, n = fc_cg_white$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_latinx$count, n = fc_cg_latinx$n, p.adjust.method = "holm")
+```
+
+
+### Family Parent-Child Conflict Increased Percentage - Breakdown by Race/Ethnicity and Income
+  * In low-income families, Black families had significantly lower percentage of increased parent-child conflict compared to Latinx and White (marginally significant) families at Week 9; these differences were not significant at Week 11 and 16;\
+  * In high-income families, no statistically significant race/ethnicity differences were found.
+ 
+ 
+```{r, echo=FALSE, message = FALSE}
+#Total responses increased family conflict
+
+
+fc_cg_total_09 <- fc_cg %>%
+  filter (week9 == 1 & race_ethnic != "NA" & poverty_cat != "NA" & fc_child_cg9_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg9_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat)
+
+fc_cg_total_011 <- fc_cg %>%
+  filter (week11 == 1 & race_ethnic != "NA"& poverty_cat != "NA" & fc_child_cg11_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg11_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat)
+
+fc_cg_total_016 <- fc_cg %>%
+  filter (week16 == 1 & race_ethnic != "NA"& poverty_cat != "NA"& fc_child_cg9_ic!= "NA")%>%
+  group_by (race_ethnic, poverty_cat)%>%
+  summarise (n = n(),
+             prop = sum(fc_child_cg16_ic, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe = map2_dbl(prop, n, moe.p)) %>%
+  select (time, n, prop, moe, race_ethnic,poverty_cat )
+
+
+fc_cg_total <- rbind(rbind(fc_cg_total_09, fc_cg_total_011), fc_cg_total_016)
+
+fc_cg_total %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (poverty_cat~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_cg_total <- fc_cg_total %>%
+  mutate (count = round (n*prop,0))
+fc_cg_total9 <- fc_cg_total %>%
+  filter (time == "a.Week9") 
+fc_cg_total11 <- fc_cg_total %>%
+  filter (time == "b.Week11")
+fc_cg_total16 <- fc_cg_total %>%
+  filter (time == "c.Week16") 
+fc_cg_black <- fc_cg_total %>%
+  filter (race_ethnic == "Black") 
+fc_cg_white <- fc_cg_total %>%
+  filter (race_ethnic == "White") 
+fc_cg_latinx <- fc_cg_total %>%
+  filter (race_ethnic == "Latinx") 
+fc_cg_low <- fc_cg_total %>%
+  filter (poverty_cat == "Low Income") 
+fc_cg_high <- fc_cg_total %>%
+  filter (poverty_cat == "High Income") 
+ 
+
+pairwise.prop.test(x = fc_cg_total9$count, n = fc_cg_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total11$count, n = fc_cg_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_total16$count, n = fc_cg_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_low$count, n = fc_cg_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_high$count, n = fc_cg_high$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_cg_black$count, n = fc_cg_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_white$count, n = fc_cg_white$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_cg_latinx$count, n = fc_cg_latinx$n, p.adjust.method = "holm")
+```
+
+
+# Source of Conflict
+## Detailed Categories
+  * At all three timepoints, majority caregivers reported that sources that can help them decrease family conflict the most were emotional measures, followed by financial measures. Only small amount of caregivers that childcare support could help decrese family conflict. \
+  1 - Being confident that my family has health insurance\
+  2 - Not being so socially isolated\
+  3 - Having lower levels of worry and stress\
+  4 - Knowing we can pay for food\
+  5 - Knowing we can pay my rent/mortgage/housing expenses\
+  6 - Knowing we can pay my rent/mortgage/housing expenses\
+  7 - Being able to meet my child's social and emotional needs\
+  8 - Knowing we have access to childcare\
+
+```{r, echo=FALSE, message = FALSE}
+fc_sc_9 <- fc %>%
+  filter (Week == 9 & conflictSource != "NA" )%>%
+  group_by (conflictSource)%>%
+  summarise (count = n())%>%
+  ungroup()%>%
+  mutate(percent = count/sum(count),
+         n = sum(count))%>%
+  mutate(moe = map2_dbl(percent, n, moe.p), 
+         time = "a.Week9")
+
+fc_sc_11 <- fc %>%
+  filter (Week == 11 & conflictSource != "NA")%>%
+  group_by (conflictSource)%>%
+  summarise (count = n())%>%
+  ungroup()%>%
+  mutate(percent = count/sum(count),
+         n = sum(count))%>%
+  mutate(moe = map2_dbl(percent, n, moe.p), 
+         time = "b.Week11")
+
+fc_sc_16 <- fc %>%
+  filter (Week == 16 & conflictSource != "NA")%>%
+  group_by (conflictSource)%>%
+  summarise (count = n())%>%
+  ungroup()%>%
+  mutate(percent = count/sum(count),
+         n = sum(count))%>%
+  mutate(moe = map2_dbl(percent, n, moe.p), 
+         time = "c.Week16")
+
+
+
+fc_sc_total <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  mutate (conflictSource = case_when (
+                          conflictSource == 1 ~ "health insurance", 
+                          conflictSource == 2 ~ "social isolation", 
+                          conflictSource == 3 ~ "worry & stress", 
+                          conflictSource == 4 ~ "pay for food", 
+                          conflictSource == 5 ~ "pay for housing", 
+                          conflictSource == 6 ~ "know job secure", 
+                          conflictSource == 7 ~ "meet children's socioemotional needs", 
+                          conflictSource == 8 ~ "access to childcare" ))
+
+fc_sc_total %>%
+  ggplot (mapping = aes (y = conflictSource, x = percent*100, fill = conflictSource))+
+  geom_col (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(percent*100,2)),vjust = 0, size = 3, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(xmin = (percent*100-moe*100), 
+                     xmax = (percent*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time, nrow = 3)
+```
+
+
+
+## Aggregated to Financial & Emotional
+```{r, echo=FALSE, message = FALSE}
+fc_sc <- fc %>%
+  select(CaregiverID, Week, race_ethnic, poverty_cat, conflictSource) %>%
+  mutate (fc_fn = case_when (
+                      conflictSource == 1 ~ 1,
+                      conflictSource == 4 ~ 1,
+                      conflictSource == 5 ~ 1,
+                      conflictSource == 6 ~ 1,
+                      conflictSource == 2 ~ 0,
+                      conflictSource == 3 ~ 0,
+                      conflictSource == 7 ~ 0,
+                      conflictSource == 8 ~ 0), 
+          fc_em = case_when (
+                      conflictSource == 1 ~ 0,
+                      conflictSource == 4 ~ 0,
+                      conflictSource == 5 ~ 0,
+                      conflictSource == 6 ~ 0,
+                      conflictSource == 2 ~ 1,
+                      conflictSource == 3 ~ 1,
+                      conflictSource == 7 ~ 1,
+                      conflictSource == 8 ~ 0),
+           fc_cc = case_when (
+                      conflictSource == 1 ~ 0,
+                      conflictSource == 4 ~ 0,
+                      conflictSource == 5 ~ 0,
+                      conflictSource == 6 ~ 0,
+                      conflictSource == 2 ~ 0,
+                      conflictSource == 3 ~ 0,
+                      conflictSource == 7 ~ 0,
+                      conflictSource == 8 ~ 1))
+
+```
+
+### Aggregrated Source of Conflict - Total Respones
+  * At all three timepoints, majority caregivers reported that sources that can help them decrease family conflict the most were emotional measures, followed by financial measures. Only small amount of caregivers that childcare support could help decrese family conflict. There were no statistically significant differences across different timepoints. 
+  
+```{r, echo=FALSE, message = FALSE}
+fc_sc_9 <- fc_sc %>%
+  filter (Week == 9 & conflictSource != "NA")%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"))
+
+fc_sc_11 <- fc_sc %>%
+  filter (Week == 11  & conflictSource != "NA")%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"))
+
+
+fc_sc_16 <- fc_sc %>%
+  filter (Week == 16  & conflictSource != "NA")%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"))
+
+
+fc_sc_prop <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  select(time, n, financial, emotional, childcare)%>%
+  pivot_longer (cols = c("financial", "emotional", "childcare"), names_to = "Conflict_source", values_to = "prop")
+
+fc_sc_moe <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  select(time, n, contains ("moe"))%>%
+  pivot_longer (cols = c("moe.fn", "moe.em", "moe.cc"), names_to = "moe_source", values_to = "moe")%>%
+  mutate (Conflict_source = case_when (
+                            moe_source == "moe.fn" ~ "financial", 
+                            moe_source == "moe.em" ~ "emotional", 
+                            moe_source == "moe.cc" ~ "childcare"))
+
+fc_sc_total <- merge (fc_sc_prop, fc_sc_moe)
+
+fc_sc_total %>%
+  ggplot (mapping = aes (x = Conflict_source, y = prop*100, fill = Conflict_source))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~time)
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_sc_total <- fc_sc_total %>%
+  mutate (count = round (n*prop,0))
+pairwise.prop.test(x = fc_sc_total$count, n = fc_sc_total$n, p.adjust.method = "holm")
+```
+
+### Aggregrated Source of Conflict - Breakdown by Income
+  *Note: very small percentage of childcare category, so the figure omitted this category and only presented the financial and emotional sources.\
+  
+  * At week 9 & 11, significantly more high-income families reported that emotional measures can help reduce family conflict compared to low-income families; this difference was not statistically significant for Week 16.\
+   * At week 9 & 11, significantly more low-income families reported that emotional measures can help reduce family conflict compared to high-income families; this difference was not statistically significant for Week 16.\
+  * For both low- and high-income families, the percentage of caregivers reporting that financial measures could help reduce family conflict remained relatively stable throughout the three weeks (i.e., no statistically significant differences).\ 
+  * For low-income and high-income families, the percentage of caregivers reporting that emotional measures could help reduce family conflict remained relatively stable throughout the three weeks (i.e., no statistically significant differences).
+  
+```{r, echo=FALSE, message = FALSE}
+fc_sc_9 <- fc_sc %>%
+  filter (Week == 9 & poverty_cat != "NA" & conflictSource != "NA" )%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"), poverty_cat)
+
+fc_sc_11 <- fc_sc %>%
+  filter (Week == 11 & poverty_cat != "NA"& conflictSource != "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"), poverty_cat)
+
+
+fc_sc_16 <- fc_sc %>%
+  filter (Week == 16 & poverty_cat != "NA"& conflictSource != "NA")%>%
+  group_by (poverty_cat)%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"), poverty_cat)
+
+
+fc_sc_prop <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  select(time, n, financial, emotional, childcare, poverty_cat)%>%
+  pivot_longer (cols = c("financial", "emotional", "childcare"), names_to = "Conflict_source", values_to = "prop")
+
+fc_sc_moe <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  select(time, n, contains ("moe"))%>%
+  pivot_longer (cols = c("moe.fn", "moe.em", "moe.cc"), names_to = "moe_source", values_to = "moe")%>%
+  mutate (Conflict_source = case_when (
+                            moe_source == "moe.fn" ~ "financial", 
+                            moe_source == "moe.em" ~ "emotional", 
+                            moe_source == "moe.cc" ~ "childcare"))
+
+fc_sc_total <- merge (fc_sc_prop, fc_sc_moe)
+
+fc_sc_total %>%
+  filter (Conflict_source != "childcare") %>%
+  ggplot (mapping = aes (x = poverty_cat, y = prop*100, fill = poverty_cat))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (Conflict_source~time)
+```  
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_sc_total <- fc_sc_total %>%
+  mutate (count = round (n*prop,0))
+fc_sc_total9 <- fc_sc_total %>%
+  filter (time == "a.Week9")
+fc_sc_total11 <- fc_sc_total %>%
+  filter (time == "b.Week11")
+fc_sc_total16 <- fc_sc_total %>%
+  filter (time == "c.Week16")
+fc_sc_low <- fc_sc_total %>%
+  filter (poverty_cat == "Low Income")
+fc_sc_high <- fc_sc_total %>%
+  filter (poverty_cat == "High Income")
+
+pairwise.prop.test(x = fc_sc_total9$count, n = fc_sc_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_total11$count, n = fc_sc_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_total16$count, n = fc_sc_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_sc_low$count, n = fc_sc_low$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_high$count, n = fc_sc_high$n, p.adjust.method = "holm")
+```
+
+### Aggregrated Source of Conflict - Breakdown by Race/Ethnicity
+  * At Week 9, no significant differences across race/ethnicity groups in caregivers' report of conflict sources\
+  * At Week 11, more Black families reported financial conflict resources than White families; similar patterns were shown for Week 16 with marginally significant statistical tests\
+  * For families of all three race/ethnicity groups: no significant changes of reported emotional or financial conflict resources across time;\  
+  
+```{r, echo=FALSE, message = FALSE}
+fc_sc_9 <- fc_sc %>%
+  filter (Week == 9 & race_ethnic != "NA" & conflictSource != "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "a.Week9", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"), race_ethnic)
+
+fc_sc_11 <- fc_sc %>%
+  filter (Week == 11 & race_ethnic != "NA" & conflictSource != "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "b.Week11", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"), race_ethnic)
+
+
+fc_sc_16 <- fc_sc %>%
+  filter (Week == 16 & race_ethnic != "NA" & conflictSource != "NA")%>%
+  group_by (race_ethnic)%>%
+  summarise (n = n(),
+             financial = sum(fc_fn, na.rm = TRUE)/n, 
+             emotional = sum(fc_em, na.rm = TRUE)/n, 
+             childcare = sum(fc_cc, na.rm = TRUE)/n)%>%
+  mutate (time = "c.Week16", 
+          moe.fn = map2_dbl(financial, n, moe.p),
+          moe.em = map2_dbl(emotional, n, moe.p),
+          moe.cc = map2_dbl(childcare, n, moe.p)) %>%
+  select (time, n, financial, emotional, childcare, contains("moe"), race_ethnic)
+
+
+fc_sc_prop <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  select(time, n, financial, emotional, childcare, race_ethnic)%>%
+  pivot_longer (cols = c("financial", "emotional", "childcare"), names_to = "Conflict_source", values_to = "prop")
+
+fc_sc_moe <- rbind(rbind(fc_sc_9, fc_sc_11), fc_sc_16)%>%
+  select(time, n, contains ("moe"))%>%
+  pivot_longer (cols = c("moe.fn", "moe.em", "moe.cc"), names_to = "moe_source", values_to = "moe")%>%
+  mutate (Conflict_source = case_when (
+                            moe_source == "moe.fn" ~ "financial", 
+                            moe_source == "moe.em" ~ "emotional", 
+                            moe_source == "moe.cc" ~ "childcare"))
+
+fc_sc_total <- merge (fc_sc_prop, fc_sc_moe)
+
+fc_sc_total %>%
+  filter (Conflict_source != "childcare") %>%
+  ggplot (mapping = aes (x = race_ethnic, y = prop*100, fill = race_ethnic))+
+  geom_bar (stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(prop*100,2)),vjust = -0.5, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (prop*100-moe*100), 
+                     ymax = (prop*100+moe*100)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (Conflict_source~time)
+```  
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#prop tests to compare different means
+fc_sc_total <- fc_sc_total %>%
+  mutate (count = round (n*prop,0))
+fc_sc_total9 <- fc_sc_total %>%
+  filter (time == "a.Week9")
+fc_sc_total11 <- fc_sc_total %>%
+  filter (time == "b.Week11")
+fc_sc_total16 <- fc_sc_total %>%
+  filter (time == "c.Week16")
+fc_sc_black <- fc_sc_total %>%
+  filter (race_ethnic == "Black")
+fc_sc_latinx <- fc_sc_total %>%
+  filter (race_ethnic == "Latinx")
+fc_sc_white <- fc_sc_total %>%
+  filter (race_ethnic == "White")
+
+
+pairwise.prop.test(x = fc_sc_total9$count, n = fc_sc_total9$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_total11$count, n = fc_sc_total11$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_total16$count, n = fc_sc_total16$n, p.adjust.method = "holm")
+
+pairwise.prop.test(x = fc_sc_black$count, n = fc_sc_black$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_latinx$count, n = fc_sc_latinx$n, p.adjust.method = "holm")
+pairwise.prop.test(x = fc_sc_white$count, n = fc_sc_white$n, p.adjust.method = "holm")
+```
+
+# Family Cohesion Analyses
+## Total Responses
+  * Family cohesion remained high from pre-COVID to three timepoints after COVID. Out of a total score of 5, the average cohesion scores were all above 4.4
+  * There was a small and significant increase in average family cohesion levels from Week 9 to Week 11. 
+
+```{r, echo=FALSE, message = FALSE}
+
+ch <- fc %>%
+  group_by (Week) %>%
+  summarise (ch_total_sd = sd (cohesive, na.rm = TRUE),
+            ch_total_m = mean (cohesive, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(ch_total_m, ch_total_sd, moe.m)) 
+
+ch %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  ggplot (mapping = aes (x = Week_c, y = ch_total_m, fill = Week_c)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(ch_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (ch_total_m-moe), 
+                     ymax = (ch_total_m+moe)),
+                 width = .5, position = position_dodge(1))
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+pairwise.t.test (x = fc$cohesive, g = fc$Week, p.adjust.method = "holm")
+```
+
+## Breakdown by Income Levels
+  * No statistically significant differences were found in family cohesion levels between low- and high-income families.\
+  
+```{r, echo=FALSE, message = FALSE}
+
+ch <- fc %>%
+  filter (poverty_cat != "NA")%>%
+  group_by (Week, poverty_cat) %>%
+  summarise (ch_total_sd = sd (cohesive, na.rm = TRUE),
+            ch_total_m = mean (cohesive, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(ch_total_m, ch_total_sd, moe.m)) 
+
+ch %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  ggplot (mapping = aes (x = Week_c, y = ch_total_m, fill = Week_c)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(ch_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (ch_total_m-moe), 
+                     ymax = (ch_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~poverty_cat)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+
+fc_0 <- fc %>%
+  filter (Week == 0)
+fc_9 <- fc %>%
+  filter (Week == 9)
+fc_11 <- fc %>%
+  filter (Week == 11)
+fc_16 <- fc %>%
+  filter (Week == 16)
+fc_low <- fc %>%
+  filter (poverty_cat == "Low Income")
+fc_high <- fc %>%
+  filter (poverty_cat == "High Income")
+
+pairwise.t.test (x = fc_0$cohesive, g = fc_0$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$cohesive, g = fc_9$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$cohesive, g = fc_11$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$cohesive, g = fc_16$poverty_cat, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_low$cohesive, g = fc_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_high$cohesive, g = fc_high$Week, p.adjust.method = "holm")
+```
+
+## Breakdown by Race/Ethnicity
+  * Pre-COVID, White families reported significantly higher levels of family cohesion compared to Black and Latinx families\
+  * At week 9 & 11, White families reported significantly higher levels of family cohesion compared to Latinx families\
+  * At week 16, White and Latinx families reported significantly higher levels of family cohesion compared to Black families; White families' family cohesion level was also marginally higher than Latinx families\
+  * For White families, despite relatively stable, family cohesion levels significantly incrased from week 9 to 11\
+  * For Blakc and Latinx families, family cohesion levels remained stable and did not have statistically significant changes across time. 
+  
+```{r, echo=FALSE, message = FALSE}
+
+ch <- fc %>%
+  filter (race_ethnic != "NA")%>%
+  group_by (Week, race_ethnic) %>%
+  summarise (ch_total_sd = sd (cohesive, na.rm = TRUE),
+            ch_total_m = mean (cohesive, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(ch_total_m, ch_total_sd, moe.m)) 
+
+ch %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  ggplot (mapping = aes (x = Week_c, y = ch_total_m, fill = Week_c)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(ch_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (ch_total_m-moe), 
+                     ymax = (ch_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~race_ethnic)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+fc_white <- fc %>%
+  filter (race_ethnic == "White")
+fc_black <- fc %>%
+  filter (race_ethnic == "Black")
+fc_latinx <- fc %>%
+  filter (race_ethnic == "Latinx")
+
+pairwise.t.test (x = fc_0$cohesive, g = fc_0$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$cohesive, g = fc_9$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$cohesive, g = fc_11$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$cohesive, g = fc_16$race_ethnic, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white$cohesive, g = fc_white$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black$cohesive, g = fc_black$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx$cohesive, g = fc_latinx$Week, p.adjust.method = "holm")
+```
+
+# Supplemental: Comparisons of Family Conflict Levels Using Mean Scores
+## Total Mean Scores at Different Timepoints - Total Responses
+ * Mean scores of total family conflict increased significantly from Pre-COVID (M = 1.02) to post-COVID (p < .001), and then remained stable from Week 9 (June 1st, M = 1.35), 11 (June 15th, M= 1.32), and 16 (July 20th, M = 1.31).
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week) %>%
+  summarise (fc_total_sd = sd (conflict_total, na.rm = TRUE),
+            fc_total_m = mean (conflict_total, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  ggplot (mapping = aes (x = Week_c, y = fc_total_m, fill = Week_c)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+pairwise.t.test (x = fc$conflict_total, g = fc$Week, p.adjust.method = "holm")
+```
+
+### Family Conflict Total Mean Scores at Different Timepoints - Breakdown by Poverty Level
+ * At all timepoints, low-income families showed slightly higher mean levels of family conflict compared to high-income families. However, these differences are not statistically significant. 
+ * For both low- and high-income families, total family conflict increased significantly from Pre-COVID  to post-COVID (p < .001), and then remained stable from Week 9 (June 1st), 11 (June 15th), and 16 (July 20th).
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, poverty_cat) %>%
+  summarise (fc_total_sd = sd (conflict_total, na.rm = TRUE),
+            fc_total_m = mean (conflict_total, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (poverty_cat != "NA")%>%
+  ggplot (mapping = aes (x = poverty_cat, y = fc_total_m, fill = poverty_cat)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+
+pairwise.t.test (x = fc_0$conflict_total, g = fc_0$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$conflict_total, g = fc_9$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$conflict_total, g = fc_11$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$conflict_total, g = fc_16$poverty_cat, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_low$conflict_total, g = fc_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_high$conflict_total, g = fc_high$Week, p.adjust.method = "holm")
+```
+
+### Family Conflict Total Mean Scores at Different Timepoints - Breakdown by Race/Ethnicity
+ * Pre-COVID, White families reported the highest levels of family conflict, followed by Black and Latinx families. The differences between White and Latinx family conflict levels were statistically significant\
+ * All three timepoints post-COVID, White families reported the highest levels of family conflict, followed by Latinx and Black families.\
+    + Week 9 (June 1st), the differences between White and Black family conflict levels were statistically significant.\
+    + Week 11 (June 15th) and Week 16 (July 20th), the differences of family conflict levels among three different race/ethnicity groups were not statistically significant. \
+  * For both White and Latinx families, the mean levels of family conflict significantly increased from pre- to post-COVID, and then remained relatively stable across time. However, family conflict levels in Black families did not change significantly from pre- to post-COVID.
+ 
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, race_ethnic) %>%
+  summarise (fc_total_sd = sd (conflict_total, na.rm = TRUE),
+            fc_total_m = mean (conflict_total, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (race_ethnic != "NA")%>%
+  ggplot (mapping = aes (x = race_ethnic, y = fc_total_m, fill = race_ethnic)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+
+pairwise.t.test (x = fc_0$conflict_total, g = fc_0$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$conflict_total, g = fc_9$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$conflict_total, g = fc_11$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$conflict_total, g = fc_16$race_ethnic, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white$conflict_total, g = fc_white$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black$conflict_total, g = fc_black$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx$conflict_total, g = fc_latinx$Week, p.adjust.method = "holm")
+```
+
+### Family Conflict Total Mean Scores at Different Timepoints - Breakdown by Race/Ethnicity and Income
+  * For both low-income and high-income White and Latinx families, the mean levels of family conflict significantly increased from pre- to post-COVID, and then remained relatively stable across time. However, family conflict levels in high-income and low-income Black families did not change significantly from pre- to post-COVID.
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarise (fc_total_sd = sd (conflict_total, na.rm = TRUE),
+            fc_total_m = mean (conflict_total, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (race_ethnic != "NA" & poverty_cat != "NA")%>%
+  ggplot (mapping = aes (x = race_ethnic, y = fc_total_m, fill = race_ethnic)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (poverty_cat~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+fc_white_low <- fc %>%
+  filter (race_ethnic == "White" & poverty_cat == "Low Income")
+fc_black_low <- fc %>%
+  filter (race_ethnic == "Black"& poverty_cat == "Low Income")
+fc_latinx_low <- fc %>%
+  filter (race_ethnic == "Latinx"& poverty_cat == "Low Income")
+
+fc_white_high <- fc %>%
+  filter (race_ethnic == "White"& poverty_cat == "High Income")
+fc_black_high <- fc %>%
+  filter (race_ethnic == "Black"& poverty_cat == "High Income")
+fc_latinx_high <- fc %>%
+  filter (race_ethnic == "Latinx"& poverty_cat == "High Income")
+
+pairwise.t.test (x = fc_white_low$conflict_total, g = fc_white_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black_low$conflict_total, g = fc_black_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx_low$conflict_total, g = fc_latinx_low$Week, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white_high$conflict_total, g = fc_white_high$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black_high$conflict_total, g = fc_black_high$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx_high$conflict_total, g = fc_latinx_high$Week, p.adjust.method = "holm")
+```
+
+## Family Spousal Conflict Mean Scores at Different Timepoints
+ * Mean scores of family conflict  between spouses increased significantly from Pre-COVID (M = .70) to post-COVID Week 9 (M = .94, p < .001), and then significantly decreased at Week 11 (M = .84, p < .05), and then remained stable through Week 16 (M = .86).
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week) %>%
+  summarise (fc_total_sd = sd (conflict_parent, na.rm = TRUE),
+            fc_total_m = mean (conflict_parent, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  ggplot (mapping = aes (x = Week_c, y = fc_total_m, fill = Week_c)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+pairwise.t.test (x = fc$conflict_parent, g = fc$Week, p.adjust.method = "holm")
+```
+
+### Family Spousal Conflict Mean Scores at Different Timepoints - Breakdown by Poverty Level
+ * At all timepoints, low-income families showed slightly higher mean levels of spousal conflict compared to high-income families. However, these differences are not statistically significant. 
+ * For  high-income families, spousal conflict increased significantly from Pre-COVID  to post-COVID (p < .001), and then remained relatively stable from Week 9 (June 1st), 11 (June 15th), and 16 (July 20th). For low-income families, significant difference only existed between Week 0 and Week 9 spousal conflict levels. 
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, poverty_cat) %>%
+  summarise (fc_total_sd = sd (conflict_parent, na.rm = TRUE),
+            fc_total_m = mean (conflict_parent, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (poverty_cat != "NA")%>%
+  ggplot (mapping = aes (x = poverty_cat, y = fc_total_m, fill = poverty_cat)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+fc_0 <- fc %>%
+  filter (Week == 0)
+fc_9 <- fc %>%
+  filter (Week == 9)
+fc_11 <- fc %>%
+  filter (Week == 11)
+fc_16 <- fc %>%
+  filter (Week == 16)
+fc_low <- fc %>%
+  filter (poverty_cat == "Low Income")
+fc_high <- fc %>%
+  filter (poverty_cat == "High Income")
+
+pairwise.t.test (x = fc_0$conflict_parent, g = fc_0$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$conflict_parent, g = fc_9$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$conflict_parent, g = fc_11$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$conflict_parent, g = fc_16$poverty_cat, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_low$conflict_parent, g = fc_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_high$conflict_parent, g = fc_high$Week, p.adjust.method = "holm")
+```
+
+## Family Spousal Conflict Mean Scores at Different Timepoints - Breakdown by Race/Ethnicity
+ * Group Differences at Different Timepoints:
+  + At all four timepoints, differences in spousal conflict levels by race/ethnicity groups were not statistically significant.\
+ * Changes Over Time:\
+  + For White families, spousal conflict level significantly increased from pre-COVID to June 1st (p < .001), then significantly decreased at June 15th (p < .05), and then remained stable at July 20th\
+  + For Black and Latinx families, changes of spousal conflict levels were not statistically significant. 
+ 
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, race_ethnic) %>%
+  summarise (fc_total_sd = sd (conflict_parent, na.rm = TRUE),
+            fc_total_m = mean (conflict_parent, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (race_ethnic != "NA")%>%
+  ggplot (mapping = aes (x = race_ethnic, y = fc_total_m, fill = race_ethnic)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+fc_white <- fc %>%
+  filter (race_ethnic == "White")
+fc_black <- fc %>%
+  filter (race_ethnic == "Black")
+fc_latinx <- fc %>%
+  filter (race_ethnic == "Latinx")
+
+pairwise.t.test (x = fc_0$conflict_parent, g = fc_0$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$conflict_parent, g = fc_9$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$conflict_parent, g = fc_11$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$conflict_parent, g = fc_16$race_ethnic, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white$conflict_parent, g = fc_white$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black$conflict_parent, g = fc_black$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx$conflict_parent, g = fc_latinx$Week, p.adjust.method = "holm")
+```
+
+## Family Spousal Conflict Mean Scores at Different Timepoints - Breakdown by Race/Ethnicity and Income
+  * For both low-income and high-income White families, the mean levels of spousal  conflict significantly increased from pre- to post-COVID, and then remained relatively stable across time. However, family conflict levels in high-income and low-income Black and Latinx families did not change significantly from pre- to post-COVID.
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarise (fc_total_sd = sd (conflict_parent, na.rm = TRUE),
+            fc_total_m = mean (conflict_parent, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (race_ethnic != "NA" & poverty_cat != "NA")%>%
+  ggplot (mapping = aes (x = race_ethnic, y = fc_total_m, fill = race_ethnic)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (poverty_cat~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+fc_white_low <- fc %>%
+  filter (race_ethnic == "White" & poverty_cat == "Low Income")
+fc_black_low <- fc %>%
+  filter (race_ethnic == "Black"& poverty_cat == "Low Income")
+fc_latinx_low <- fc %>%
+  filter (race_ethnic == "Latinx"& poverty_cat == "Low Income")
+
+fc_white_high <- fc %>%
+  filter (race_ethnic == "White"& poverty_cat == "High Income")
+fc_black_high <- fc %>%
+  filter (race_ethnic == "Black"& poverty_cat == "High Income")
+fc_latinx_high <- fc %>%
+  filter (race_ethnic == "Latinx"& poverty_cat == "High Income")
+
+pairwise.t.test (x = fc_white_low$conflict_parent, g = fc_white_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black_low$conflict_parent, g = fc_black_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx_low$conflict_parent, g = fc_latinx_low$Week, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white_high$conflict_parent, g = fc_white_high$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black_high$conflict_parent, g = fc_black_high$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx_high$conflict_parent, g = fc_latinx_high$Week, p.adjust.method = "holm")
+```
+
+# Family Parent-Child Conflict Mean Scores at Different Timepoints
+ * Mean scores of family conflict between parents and children increased significantly from Pre-COVID (M = 1.12) to post-COVID Week 9 (M = 1.48, p < .001), and then remained stable across Week 11 (M = 1.45) and Week 16 (M = 1.45).
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week) %>%
+  summarise (fc_total_sd = sd (conflict_child, na.rm = TRUE),
+            fc_total_m = mean (conflict_child, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  ggplot (mapping = aes (x = Week_c, y = fc_total_m, fill = Week_c)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+pairwise.t.test (x = fc$conflict_child, g = fc$Week, p.adjust.method = "holm")
+```
+
+### Family Parent-Child Conflict Mean Scores at Different Timepoints - Breakdown by Poverty Level
+ * There are no statistically significant differences in parent-child conflict levels by the family income levels
+ * For both high-income and low-income families, parent-child conflict increased significantly from Pre-COVID  to post-COVID (p < .001), and then remained relatively stable from Week 9 (June 1st), 11 (June 15th), and 16 (July 20th). 
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, poverty_cat) %>%
+  summarise (fc_total_sd = sd (conflict_child, na.rm = TRUE),
+            fc_total_m = mean (conflict_child, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (poverty_cat != "NA")%>%
+  ggplot (mapping = aes (x = poverty_cat, y = fc_total_m, fill = poverty_cat)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different mean
+pairwise.t.test (x = fc_0$conflict_child, g = fc_0$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$conflict_child, g = fc_9$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$conflict_child, g = fc_11$poverty_cat, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$conflict_child, g = fc_16$poverty_cat, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_low$conflict_child, g = fc_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_high$conflict_child, g = fc_high$Week, p.adjust.method = "holm")
+```
+
+### Family Spousal Conflict Mean Scores at Different Timepoints - Breakdown by Race/Ethnicity
+ * Group Differences at Different Timepoints:
+  + At all four timepoints, White families reported the highest parent-child conflict levels, followed by Latinx and Black families.\
+  + Pre-COVID and Week 11, significant differences between White & Black, and between White & Latinx families\
+  + Week 9 and Week 16, significant differences between White & Black families\
+ * Changes Over Time:\
+  + For White & Latinx families, parent-child conflict level significantly increased from pre-COVID to Week 9 (p < .001), then  then remained stable across weeks 11 and 16\
+  + For Black families, changes of parent-child conflict levels were not statistically significant. 
+ 
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, race_ethnic) %>%
+  summarise (fc_total_sd = sd (conflict_child, na.rm = TRUE),
+            fc_total_m = mean (conflict_child, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (race_ethnic != "NA")%>%
+  ggplot (mapping = aes (x = race_ethnic, y = fc_total_m, fill = race_ethnic)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+
+pairwise.t.test (x = fc_0$conflict_child, g = fc_0$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_9$conflict_child, g = fc_9$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_11$conflict_child, g = fc_11$race_ethnic, p.adjust.method = "holm")
+pairwise.t.test (x = fc_16$conflict_child, g = fc_16$race_ethnic, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white$conflict_child, g = fc_white$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black$conflict_child, g = fc_black$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx$conflict_child, g = fc_latinx$Week, p.adjust.method = "holm")
+```
+
+### Family Parent-Child Conflict Mean Scores at Different Timepoints - Breakdown by Race/Ethnicity and Income
+  * For both low-income and high-income White & Latinx families, the mean levels of parent-child conflict significantly increased from pre- to post-COVID, and then remained relatively stable across time. However, family conflict levels in high-income and low-income Black families did not change significantly from pre- to post-COVID.
+ 
+```{r, echo=FALSE, message = FALSE}
+fc_total <- fc %>%
+  group_by (Week, race_ethnic, poverty_cat) %>%
+  summarise (fc_total_sd = sd (conflict_child, na.rm = TRUE),
+            fc_total_m = mean (conflict_child, na.rm = TRUE)) %>%
+  mutate(moe = map2_dbl(fc_total_m, fc_total_sd, moe.m)) 
+
+fc_total %>%
+  mutate (Week_c = case_when(
+                  Week == 0 ~ "a.Pre-COVID",
+                  Week == 9 ~ "b.June 1st",
+                  Week == 11 ~ "c.June 15th",
+                  Week == 16 ~ "d.July 20th")
+  ) %>%
+  filter (race_ethnic != "NA" & poverty_cat != "NA")%>%
+  ggplot (mapping = aes (x = race_ethnic, y = fc_total_m, fill = race_ethnic)) +
+  geom_bar(stat = "identity", position = position_dodge (1)) +
+  geom_text(aes(label = round(fc_total_m,2)),vjust = 2, color = "black",  position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (fc_total_m-moe), 
+                     ymax = (fc_total_m+moe)),
+                 width = .5, position = position_dodge(1))+
+  facet_wrap (poverty_cat~Week_c, ncol = 4)
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+#T tests to compare different means
+
+pairwise.t.test (x = fc_white_low$conflict_child, g = fc_white_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black_low$conflict_child, g = fc_black_low$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx_low$conflict_child, g = fc_latinx_low$Week, p.adjust.method = "holm")
+
+pairwise.t.test (x = fc_white_high$conflict_child, g = fc_white_high$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_black_high$conflict_child, g = fc_black_high$Week, p.adjust.method = "holm")
+pairwise.t.test (x = fc_latinx_high$conflict_child, g = fc_latinx_high$Week, p.adjust.method = "holm")
+```

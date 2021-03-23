@@ -1,0 +1,445 @@
+---
+title: "Children with Disabilities New"
+author: "Sihong"
+date: "10/22/2020"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include = FALSE}
+library(here)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(readr)
+library(haven)
+library(BSDA)
+```
+
+```{r, include=FALSE}
+# load scored master data --------------------------------------------------------
+#load(here::here("../../Data Management R3/R data/scored.Rdata"))
+load(here::here("data/scored.Rdata"))
+scored = scored %>%
+  mutate(
+    Week = case_when(
+      Week < 17 ~ Week,
+      Week %% 2 == 0 ~ NA_real_,
+      TRUE ~ Week)
+  ) %>%
+  filter(!is.na(Week))
+```
+
+```{r, echo=FALSE, message = FALSE}
+# Data Extraction and coding from scored.R data
+total_weeks = max(scored$Week, na.rm=T)
+key_demo <- c ("race_ethnic", "poverty_cat", "work_status", "disability_cat", "single_cat", "material_hardship")
+
+#Domains of data need to pull: caregivers' mental health, children's behavioral outcomes, material hardship, health interrupted, childcare, social support
+
+cbp <- c("fussy", "fussy_current_some", "fussy_current_lots", "fear", "fear_current_some", "fear_current_lots")
+pmh <- c("depress", "depress_current_some", "depress_current_lots", "depress_increase", "anxiety", "anxiety_current_some", "anxiety_current_lots", "anxiety_increase", "stress", "stress_current_some", "stress_current_lots", "stress_increase", "lonely", "lonely_current_some", "lonely_current_lots")
+mh <- c ("mh_food", "mh_eviction", "mh_foreclose", "mh_utilities", "num_hardship")
+cc <- c("cc2_nonparental", "cc2_centerbased", "cc2_homebased", "cc2_paid", "cc2_unpaid", "lack_cc")
+hi <- c ("miss_vaccine_any", "missed_wellbaby", "delay_healthcare")
+
+cd <- scored %>%
+  select (CaregiverID, Week, BaselineWeek, Date, key_demo, cbp, pmh, mh, cc, hi)
+
+num_responses = function(x){length(which(!is.na(x)))}
+cd.num = cd %>%
+  group_by(Week) %>%
+  summarize_all(num_responses) %>%
+  gather("Variable", "num_responses",-Week) %>%
+  mutate(week = paste0("Week", Week),
+         week = factor(Week, levels = paste0("Week", c(1:total_weeks)))) %>%
+  spread(Week, num_responses)
+
+cd <- cd %>%
+  mutate (month = case_when(
+                  Week == 0 ~ "Pre-COVID",
+                  Week >0 & Week <= 4 ~ "April",
+                  Week >=5 & Week <=8 ~ "May",
+                  Week >=9 & Week <=13 ~ "June",
+                  Week >=14 & Week <=17 ~ "July",
+                  Week >=18 & Week <=21 ~ "August",
+                  Week >=22 & Week <=26 ~ "September",
+                  Week >=27 ~ "October"))
+```
+
+```{r, echo=FALSE, message = FALSE}
+#Data extraction from spss FILE
+
+#Material hardship 006-012 data. 
+
+## Social Support data
+```
+
+```{r, echo=FALSE, message = FALSE}
+#Define functions
+moe.p = function(p, n){
+  q = 1-p
+  moe = 1.96*sqrt((p*q)/n)
+  return(moe)}
+
+moe.m = function(sd,n){
+  moe = 1.96*sd/sqrt(n)
+  return(moe)}
+
+
+```
+
+# Caregivers' Mental Health
+
+
+
+## With vs. Without Disability Comparison
+
+### Between-Subject Analyses (Group Level Means)
+
+  * Children with vs. without disability comparison: \
+    + During both pre-COVID and currently, caregivers of children with disability reported significantly higher levels of total mental health problems compared to caregivers of children without disability. \
+    + During both pre-COVID and currently, caregivers of children with disability reported significantly higher levels of depression, anxiety, stress, and loneliness, respectively, compared to caregivers of children without disability. \
+  * Pre-COVID vs. Current comparison:\
+    + For caregivers of children with or without disability, reported total mental health problems and specific symptoms (depression, anxiety, stress, and loneliness) all significantly increased from pre-COVID to currently. 
+
+```{r, echo=FALSE, message = FALSE}
+#Pre-covid
+pmh_pre_m <- cd %>%
+  filter (Week == 0) %>%
+  group_by (disability_cat) %>%
+  summarise (n = n(),
+             depress = mean(depress, na.rm = TRUE),
+             anxiety = mean(anxiety, na.rm = TRUE),
+             stress = mean(stress, na.rm = TRUE),
+             lonely = mean(lonely, na.rm = TRUE),
+             total_probs = mean(pmh_total, na.rm = TRUE))%>%
+  pivot_longer (cols = c("depress","anxiety", "stress","lonely","total_probs"), 
+                names_to = "problems", values_to = "mean") 
+             
+pmh_pre_sd <- cd %>%
+  filter (Week == 0) %>%
+  group_by (disability_cat) %>%
+  summarise (n = n(),         
+            depress = sd(depress, na.rm = TRUE),
+            anxiety = sd(anxiety, na.rm = TRUE),
+            stress = sd(stress, na.rm = TRUE),
+            lonely = sd(lonely, na.rm = TRUE),
+            total_probs = sd(pmh_total, na.rm = TRUE))%>%
+  pivot_longer (cols = c("depress","anxiety", "stress","lonely","total_probs"), 
+                names_to = "problems", values_to = "sd")
+
+pmh_pre <- merge (x = pmh_pre_m, y = pmh_pre_sd,  by.x = c("disability_cat", "problems", "n"), by.y = c("disability_cat", "problems", "n")) %>%
+mutate (moe = map2_dbl(sd, n, moe.m),
+        time = "a.Pre-COVID")
+
+#Most recent responses
+pmh_crt_m <- cd %>%
+  filter (Week != 0) %>%
+  group_by (CaregiverID)%>%
+  filter (Week == max (Week))%>%
+  ungroup ()%>%
+  group_by (disability_cat) %>%
+  summarise (n = n(),
+             depress = mean(depress, na.rm = TRUE),
+             anxiety = mean(anxiety, na.rm = TRUE),
+             stress = mean(stress, na.rm = TRUE),
+             lonely = mean(lonely, na.rm = TRUE),
+             total_probs = mean(pmh_total, na.rm = TRUE))%>%
+  pivot_longer (cols = c("depress","anxiety", "stress","lonely","total_probs"), 
+                names_to = "problems", values_to = "mean") 
+             
+pmh_crt_sd <- cd %>%
+  filter (Week != 0) %>%
+  group_by (CaregiverID)%>%
+  filter (Week == max (Week))%>%
+  ungroup ()%>%
+  group_by (disability_cat) %>%
+  summarise (n = n(),         
+            depress = sd(depress, na.rm = TRUE),
+            anxiety = sd(anxiety, na.rm = TRUE),
+            stress = sd(stress, na.rm = TRUE),
+            lonely = sd(lonely, na.rm = TRUE),
+            total_probs = sd(pmh_total, na.rm = TRUE))%>%
+  pivot_longer (cols = c("depress","anxiety", "stress","lonely","total_probs"), 
+                names_to = "problems", values_to = "sd")
+
+pmh_crt <- merge (x = pmh_crt_m, y = pmh_crt_sd,  by.x = c("disability_cat", "problems", "n"), by.y = c("disability_cat", "problems", "n"))%>%
+  mutate (moe = map2_dbl(sd, n, moe.m),
+          time = "b.Current")
+
+pmh <- rbind(pmh_pre, pmh_crt) 
+
+#Total Problems
+pmh %>%
+  filter (problems == "total_probs") %>%
+  ggplot(mapping = aes (x = disability_cat, y = mean, fill = disability_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (mean-moe), 
+                    ymax = (mean+moe)),
+                 width = .3,
+                    position = position_dodge(1)) +
+   ggtitle ("Total Problems")+
+  geom_text(aes(label = round(mean,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  facet_wrap (~time)
+
+#Breakdown to Different Problems
+pmh %>%
+  filter (problems != "total_probs") %>%
+  ggplot(mapping = aes (x = disability_cat, y = mean, fill = disability_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (mean-moe), 
+                    ymax = (mean+moe)),
+                width = .3,
+                    position = position_dodge(1)) +
+   ggtitle ("Specific Problems")+
+  geom_text(aes(label = round(mean,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  facet_wrap (problems~time, nrow = 1)+
+  theme(axis.text.x = element_blank())
+
+```
+
+```{r, results='hide', echo = FALSE, message=FALSE, warning = FALSE}
+cd_pre <- cd %>%
+  filter (Week == 0)
+cd_crt <- cd %>%
+  group_by (CaregiverID)%>%
+  filter (Week == max (Week))%>%
+  ungroup ()
+
+pairwise.t.test(x = cd_pre$pmh_total, g = cd_pre$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_crt$pmh_total, g = cd_crt$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_pre$depress, g = cd_pre$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_crt$depress, g = cd_crt$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_pre$anxiety, g = cd_pre$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_crt$anxiety, g = cd_crt$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_pre$stress, g = cd_pre$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_crt$stress, g = cd_crt$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_pre$lonely, g = cd_pre$disability_cat, p.adjust.method = "holm")
+pairwise.t.test(x = cd_crt$lonely, g = cd_crt$disability_cat, p.adjust.method = "holm")
+
+cd_dsb <-  cd %>%
+  filter (disability_cat == "Child with disability") %>%
+  group_by (CaregiverID) %>%
+  filter (Week == 0 | Week == max (Week)) %>%
+  ungroup()%>%
+  mutate (time = case_when (
+                 Week ==  0 ~ "pre-COVID",
+                 Week > 0 ~ "Current"))
+
+cd_ndsb <-  cd %>%
+  filter (disability_cat == "No disability")%>%
+  group_by (CaregiverID) %>%
+  filter (Week == 0 | Week == max (Week)) %>%
+  ungroup()%>%
+  mutate (time = case_when (
+                 Week ==  0 ~ "pre-COVID",
+                 Week > 0 ~ "Current"))
+
+pairwise.t.test(x = cd_dsb$pmh_total, g = cd_dsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_dsb$depress, g = cd_dsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_dsb$anxiety, g = cd_dsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_dsb$stress, g = cd_dsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_dsb$lonely, g = cd_dsb$time, p.adjust.method = "holm")
+
+pairwise.t.test(x = cd_ndsb$pmh_total, g = cd_ndsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_ndsb$depress, g = cd_ndsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_ndsb$anxiety, g = cd_ndsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_ndsb$stress, g = cd_ndsb$time, p.adjust.method = "holm")
+pairwise.t.test(x = cd_ndsb$lonely, g = cd_ndsb$time, p.adjust.method = "holm")
+
+
+```
+
+### Within-Subject Analyses (Individual Changes)
+```{r, echo=FALSE, message = FALSE}
+pmh_pre <- cd %>%
+  filter (Week == 0) %>%
+  select (CaregiverID, disability_cat, depress, anxiety, stress, lonely, pmh_total)%>%
+  mutate (depress_pre = depress,
+          anxiety_pre = anxiety,
+          stress_pre = stress,
+          lonely_pre = lonely,
+          pmh_total_pre = pmh_total)%>%
+  select (CaregiverID, disability_cat, depress_pre, anxiety_pre, stress_pre, lonely_pre, pmh_total_pre)
+
+pmh_crt <- cd %>%
+  filter (Week > 0) %>%
+  group_by (CaregiverID)%>%
+  filter (Week == max (Week))%>%
+  ungroup ()%>%
+  select (CaregiverID, Week, disability_cat, depress, anxiety, stress, lonely, pmh_total)%>%
+  mutate (depress_crt = depress,
+          anxiety_crt = anxiety,
+          stress_crt = stress,
+          lonely_crt = lonely,
+          pmh_total_crt = pmh_total)%>%
+  select (CaregiverID, Week, disability_cat, depress_crt, anxiety_crt, stress_crt, lonely_crt, pmh_total_crt)
+
+pmh_cg <- merge (x  = pmh_pre, y = pmh_crt, by.x = c ("CaregiverID", "disability_cat"), by.y = c ("CaregiverID", "disability_cat"), all.y = TRUE) %>%
+  mutate (depress_cg = depress_crt - depress_pre,
+          anxiety_cg = anxiety_crt - anxiety_pre,
+          stress_cg = stress_crt - stress_pre,
+          lonely_cg = lonely_crt - lonely_pre,
+          total_cg = pmh_total_crt - pmh_total_pre)
+
+pmh_cg_m <- pmh_cg%>%
+  group_by (disability_cat) %>%
+  summarise (n = n(),
+             depress = mean(depress_cg, na.rm = TRUE),
+             anxiety = mean(anxiety_cg, na.rm = TRUE),
+             stress = mean(stress_cg, na.rm = TRUE),
+             lonely = mean(lonely_cg, na.rm = TRUE),
+             total_probs = mean(total_cg, na.rm = TRUE)) %>%
+  pivot_longer (cols = c("depress", "anxiety", "stress", "lonely", "total_probs"), names_to = "probs", values_to = "mean")
+  
+pmh_cg_sd <- pmh_cg %>%
+  group_by (disability_cat) %>%
+  summarise (n = n(),
+             depress = sd(depress_cg, na.rm = TRUE),
+             anxiety = sd(anxiety_cg, na.rm = TRUE),
+             stress = sd(stress_cg, na.rm = TRUE),
+             lonely = sd(lonely_cg, na.rm = TRUE),
+             total_probs = sd(total_cg, na.rm = TRUE))%>%
+  pivot_longer (cols = c("depress", "anxiety", "stress", "lonely", "total_probs"), names_to = "probs", values_to = "sd")
+
+pmh_cg <- merge (x=pmh_cg_m, y=pmh_cg_sd)%>%
+  mutate (moe = map2_dbl(sd, n, moe.m))
+
+#Total Problems
+pmh_cg %>%
+  filter (probs == "total_probs") %>%
+  ggplot(mapping = aes (x = disability_cat, y = mean, fill = disability_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (mean-moe), 
+                    ymax = (mean+moe)),
+                 width = .3,
+                    position = position_dodge(1)) +
+  ggtitle ("Total Problems")+
+  geom_text(aes(label = round(mean,2)),vjust = -1, color = "black",  position = position_dodge(1))
+
+#Different Types
+pmh_cg %>%
+  filter (probs != "total_probs") %>%
+  ggplot(mapping = aes (x = disability_cat, y = mean, fill = disability_cat)) +
+  geom_bar (stat = "identity", position = position_dodge(1))+
+  geom_errorbar(aes(ymin = (mean-moe), 
+                    ymax = (mean+moe)),
+                width = .3,
+                    position = position_dodge(1)) +
+  ggtitle ("Specific Problems")+
+  geom_text(aes(label = round(mean,2)),vjust = -1, color = "black",  position = position_dodge(1))+
+  facet_wrap (~probs, nrow = 1)+
+  theme(axis.text.x = element_blank())
+
+```
+ * Note: explain why within-level depression decreased: for within-level analyses, change scores were calculated only for participants who had at least one non-missing current depression scores (n = 6,170), whose pre-COVID depression mean level was .427 (sd = 1.27). There were 1,287 participants who only reported pre-COVID, but not post-COVID depression levels, and their pre-COVID depression mean score was .521 (sd = 1.42), which is marginally significantlly higher than .427. 
+ 
+```{r, echo=FALSE, message = FALSE}
+pmh_cg <- merge (x  = pmh_pre, y = pmh_crt, by.x = c ("CaregiverID", "disability_cat"), by.y = c ("CaregiverID", "disability_cat"), all.x = TRUE) %>%
+  mutate (pre_exist = ifelse (is.na(pmh_total_crt), 0,1))
+
+pmh_cg %>%
+  group_by (pre_exist, disability_cat) %>%
+  summarise (n = n(),
+             dep_mean = mean (depress_pre, na.rm = TRUE), 
+             dep_sd = sd(depress_pre, na.rm = TRUE)) %>%
+  mutate (moe = map2_dbl(dep_sd, n, moe.m))
+
+pmh_cg %>%
+  group_by (pre_exist, disability_cat) %>%
+  summarise (n = n(),
+             dep_mean = mean (depress_crt, na.rm = TRUE), 
+             dep_sd = sd(depress_crt, na.rm = TRUE)) %>%
+  mutate (moe = map2_dbl(dep_sd, n, moe.m))
+
+pairwise.t.test(x = pmh_cg$depress_pre, g = pmh_cg$pre_exist, p.adjust.method = "holm")
+```
+
+## Mean Level Changes Trend
+
+  * After Week 21, the sample size of families with children of disability was very small. 
+
+```{r, echo=FALSE, message = FALSE}
+pmh <- cd %>%
+  group_by (Week, disability_cat) %>%
+  summarise (n = n(),
+             depress_m = mean(depress, na.rm = TRUE),
+             anxiety_m = mean(anxiety, na.rm = TRUE),
+             stress_m = mean(stress, na.rm = TRUE),
+             lonely_m = mean(lonely, na.rm = TRUE),
+             total_probs_m = mean(pmh_total, na.rm = TRUE),
+             depress_sd = sd(depress, na.rm = TRUE),
+             anxiety_sd = sd(anxiety, na.rm = TRUE),
+             stress_sd = sd(stress, na.rm = TRUE),
+             lonely_sd = sd(lonely, na.rm = TRUE),
+             total_probs_sd = sd(pmh_total, na.rm = TRUE))%>%
+  mutate (moe_dep = map2_dbl(depress_sd, n, moe.m),
+          moe_anx = map2_dbl(anxiety_sd, n, moe.m),
+          moe_str = map2_dbl(stress_sd, n, moe.m),
+          moe_lon = map2_dbl(lonely_sd, n, moe.m),
+          moe_tot = map2_dbl(total_probs_sd, n, moe.m),)
+
+
+pmh %>%
+ggplot( mapping = aes (x = Week, y = total_probs_m, fill = disability_cat)) +
+  geom_ribbon(aes(ymin = total_probs_m-moe_tot, ymax = total_probs_m+moe_tot), alpha = .3) +
+  geom_line() +
+  geom_point()+
+  labs (y = "Total Problems")+
+  scale_x_continuous(breaks = 0:total_weeks)
+
+
+pmh %>%
+ggplot( mapping = aes (x = Week, y = depress_m, fill = disability_cat)) +
+  geom_ribbon(aes(ymin = depress_m-moe_dep, ymax = depress_m + moe_dep), alpha = .3) +
+  geom_line() +
+  geom_point()+
+  labs (y = "Depression")+
+  scale_x_continuous(breaks = 0:total_weeks)
+
+pmh %>%
+ggplot( mapping = aes (x = Week, y = anxiety_m, fill = disability_cat)) +
+  geom_ribbon(aes(ymin = anxiety_m-moe_anx, ymax = anxiety_m + moe_anx), alpha = .3) +
+  geom_line() +
+  geom_point()+
+  labs (y = "Anxiety")+
+  scale_x_continuous(breaks = 0:total_weeks)
+
+pmh %>%
+ggplot( mapping = aes (x = Week, y = stress_m, fill = disability_cat)) +
+  geom_ribbon(aes(ymin = stress_m-moe_str, ymax = stress_m + moe_str), alpha = .3) +
+  geom_line() +
+  geom_point()+
+  labs (y = "Stress")+
+  scale_x_continuous(breaks = 0:total_weeks)
+
+pmh %>%
+ggplot( mapping = aes (x = Week, y = lonely_m, fill = disability_cat)) +
+  geom_ribbon(aes(ymin = lonely_m-moe_lon, ymax = lonely_m +moe_lon), alpha = .3) +
+  geom_line() +
+  geom_point()+
+  geom_point()+
+  labs (y = "Loneliness")+
+  scale_x_continuous(breaks = 0:total_weeks)
+  
+
+```
+# Children's Behavioral Outcomes
+
+## Behavioral Problems
+## Anxiety
+
+# Material Hardship 
+
+# Health Interrupted
+## Missing Well-baby/Well-Child Visits
+## Missing Vaccine
+
+# Childcare
+## Using Center-based Childcare
+## Caregivers' Abilities to Return to Work Because of Childcare
+
+# Social Support

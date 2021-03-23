@@ -429,7 +429,8 @@ master_fl <- master_fl %>%
 health <- master_fl %>%
   select (CaregiverID, Week, StartDate, num_delay_healthcare, delay_healthcare, contains ("hc_barrier"), contains ("miss_", ), contains ("missed_wb_"), contains ("which_wellbaby_missed"))
 
-health <- merge (x = health, y = master_dem_fl, by.x = "CaregiverID", by.y = "CaregiverID")
+health <- merge (x = health, y = master_dem_fl, by.x = "CaregiverID", by.y = "CaregiverID")%>%
+  filter (Week <= 38)
 
 num_responses = function(x){length(which(!is.na(x)))}
 health.num <- health %>%
@@ -449,7 +450,7 @@ health_rct <- health %>%
 ```
 
 # 0. Sample Disclaimer
-  * This set of analyses on interrupted healthcare is based on responses collected from 5,195 caregivers between the dates of April 6th 2020 and March 5th 2021. These caregivers represent a range of voices: 7.28% are non-Latinx Black/African American, 12.94% are Latinx, and 27.92% live at or below 1.5 times the federal poverty line.  Proportions/percentages are calculated based on the item-level response rates, not out of the total sample size. The data for these analyses are not weighted. \
+  * This set of analyses on interrupted healthcare is based on responses collected from 4,769 caregivers between the dates of April 6th 2020 and December 23rd 2020. These caregivers represent a range of voices: 6.90% are non-Latinx Black/African American, 14.10% are Latinx, and 28.58% live at or below 1.5 times the federal poverty line.  Proportions/percentages are calculated based on the item-level response rates, not out of the total sample size. The data for these analyses are not weighted. \
   
 ```{r, echo=FALSE, message = FALSE}
 library(janitor)
