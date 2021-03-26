@@ -381,7 +381,7 @@ fi_rct <- fi%>%
 
 
 # 0. Sample Disclaimer
-  * This set of analyses on food insecurity is based on responses collected from 3,301 caregivers between the dates of August 11th 2020 and December 3rd 2020. These caregivers represent a range of voices: 6.88% are non-Latinx Black/African American, 16.09% are Latinx, and 27.59% live at or below 1.5 times the federal poverty line.  Proportions/percentages are calculated based on the item-level response rates, not out of the total sample size. The data for these analyses are not weighted. \
+  * This set of analyses on food insecurity is based on responses collected from 3,284 caregivers between the dates of August 11th 2020 and December 3rd 2020. These caregivers represent a range of voices: 6.82% are non-Latinx Black/African American, 16.11% are Latinx, and 27.61% live at or below 1.5 times the federal poverty line.  Proportions/percentages are calculated based on the item-level response rates, not out of the total sample size. The data for these analyses are not weighted. \
   
 ```{r, echo=FALSE, message = FALSE, warning = FALSE}
 min(fi_rct$StartDate)

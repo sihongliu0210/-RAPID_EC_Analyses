@@ -407,7 +407,8 @@ cc_smy %>%
   geom_line() +
   theme(legend.position = "none")+                                # Remove legend or change legend position
   theme(axis.text.x = element_text(angle = 45))+
-  scale_x_date (date_breaks = "2 month", date_labels ="%b %Y")
+  scale_x_date (date_breaks = "2 month", date_labels ="%b %Y")+
+  geom_text(aes(label = round(prop*100,2)),vjust = -0.5, size = 2.5, color = "black",  position = position_dodge(1))
 
 ```
 
@@ -452,6 +453,7 @@ cc_smy %>%
   theme(axis.text.x = element_text(angle = 45))+
   scale_x_date (date_breaks = "2 month", date_labels ="%b %Y")+
   facet_wrap (~race_ethnic)
+  
   
 
 ```
@@ -662,6 +664,5 @@ cc_smy %>%
   theme(axis.text.x = element_text(angle = 45))+
   scale_x_date (date_breaks = "2 month", date_labels ="%b %Y")+
   facet_wrap (~type, nrow = 2)
-
 ```
 
